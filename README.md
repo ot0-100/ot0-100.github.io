@@ -8,7 +8,7 @@
 
 <div class="header">
     <h1>My GitHub Profile</h1>
-    <p> Ya krutoy specialist !</p>
+    [![GitHub Streak](https://streak-stats.demolab.com/?user=DenverCoder1)](https://git.io/streak-stats)
 </div>
 
 </body>
