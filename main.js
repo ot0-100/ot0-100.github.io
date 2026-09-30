@@ -2,11 +2,12 @@ const K='lifetracker.v2',WD=['понедельник','вторник','сред
 const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 const pd=s=>new Date(s+'T00:00'),addD=(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);
 const TD=pd(iso(new Date())),D=iso(TD),START=pd('2026-10-01'),END=pd('2027-06-01'),GOAL=pd('2027-06-20');
-let S={l2:null,done:{},apps:{},notes:{},co:[],debts:[],extra:0,method:'av',assets:[],led:[],hired:false,usdRate:83.5588,moneyCurrency:'RUB'};
+let S={l2:null,done:{},apps:{},notes:{},co:[],debts:[],extra:0,method:'av',assets:[],led:[],hired:false,usdRate:83.5588,moneyCurrency:'RUB',userTasks:{}};
 const DEF=JSON.parse(JSON.stringify(S));
 try{Object.assign(S,JSON.parse(localStorage.getItem(K)||'{}'))}catch(e){}
 S.usdRate=Number(S.usdRate)>0?Number(S.usdRate):83.5588;
 S.moneyCurrency=S.moneyCurrency==='USD'?'USD':'RUB';
+S.userTasks=(S.userTasks&&typeof S.userTasks==='object')?S.userTasks:{};
 
 // ---------- финансовая модель / миграция ----------
 const normFinance=()=>{
@@ -35,7 +36,7 @@ const days=(a,b)=>Math.round((a-b)/864e5),idx=d=>Math.max(0,days(d,START));
 const fd=(s,o)=>pd(s).toLocaleDateString('ru-RU',o||{day:'numeric',month:'long'});
 let col={},ti=0,tab=(location.hash||'#h').slice(1),cm=new Date(TD.getFullYear(),TD.getMonth(),1),sel=D,dd=D;
 const TABS={h:'Сегодня',k:'План',s:'Учёба',w:'Работа',m:'Деньги',f:'Спорт',d:'Дневник'};
-const AN={s:'Учёба',w:'Работа',m:'Финансы',f:'Физподготовка'};
+const AN={s:'Учёба',w:'Работа',m:'Финансы',f:'Физподготовка',u:'Мои задачи'};
 
 // ---------- годовой план ----------
 const LOG=['Понятия: объём и содержание, определение, деление','Суждения и их виды','Умозаключения: непосредственные и силлогизм','Индукция, аналогия, методы исследования причин','Доказательство, ошибки в рассуждении, итоговое повторение'];
@@ -76,11 +77,23 @@ function tasks(d){
   else T.push(wd==5?{id:'w-cv',a:'w',x:'Обновить резюме и сопроводительное письмо',h:.5}:{id:'w-sum',a:'w',x:'Итоги недели по откликам и компаниям',d:'Внести ответы в таблицу компаний',h:.25})}
  T.push({id:'m-led',a:'m',x:'Внести доходы и расходы за день',h:.1},
   {id:'f-am',a:'f',x:'Утро: '+PL[wd][0],d:fdet(d,1),h:.4},{id:'f-pm',a:'f',x:'Вечер, тихо: без скакалки',d:fdet(d,2),h:.4});
+ const own=Array.isArray(S.userTasks[iso(d)])?S.userTasks[iso(d)]:[];
+ if(own.length)T.push(...own);
  return T}
 const doneOn=(s,t)=>!!(S.done[s]&&S.done[s][t.id]),isDone=t=>doneOn(D,t);
 const chk=(t,s=D,ro)=>{const o=doneOn(s,t);return`<label class="r c${o?' on':''}"><input type=checkbox data-c=tgl data-k="${t.id}" data-d="${s}" ${o?'checked':''} ${ro?'disabled':''}><span><b>${t.x}</b>${t.d?'<small>'+t.d+'</small>':''}</span><em>${t.h} ч</em></label>`};
 const areaTasks=a=>tasks(TD).filter(t=>t.a==a);
 const grp=(T,s,ro)=>`<div class="g">${T.map(t=>chk(t,s,ro)).join('')}</div>`;
+
+// ---------- мои задачи ----------
+let ownAdd=false;
+const ownTasksToday=()=>Array.isArray(S.userTasks[D])?S.userTasks[D]:[];
+const ownTaskBlock=()=>{
+ const T=ownTasksToday(),done=T.filter(t=>doneOn(D,t)).length;
+ const form=ownAdd?`<div class="own-add g p"><input id="utx" placeholder="Что нужно сделать?" maxlength=120><div class="row" style="margin-top:8px"><input id="uth" type=number min="0.1" step="0.1" value="0.5" placeholder="Часы"><button class="b" data-a=addUserTask>Зафиксировать</button></div></div>`:'';
+ const body=T.length?grp(T,D):`<div class="g p mut">На сегодня дополнительных задач нет. Нажми «+», чтобы добавить первую.</div>`;
+ return `<div class="gh fh${col.u?' shut':''}" data-a=col data-k=u><span>Мои задачи</span><span class="own-meta">${done}/${T.length}</span><button class="own-plus" data-a=toggleOwnAdd aria-label="Добавить задачу">+</button><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div><div class="fold${col.u?' shut':''}"><div>${form}${body}</div></div>`;
+};
 
 // ---------- расчёт долгов ----------
 function sim(){
@@ -110,7 +123,8 @@ function home0(){
  <p class="mut" style="margin-top:10px">${rateText()} · подробный прогноз и раскладка активов/пассивов — в разделе «Деньги».</p></div>
  <div class="g p">${L.map(x=>'<p>'+x+'</p>').join('')}${nx?`<p style="margin-top:10px"><b>Следующий шаг:</b> ${nx.x}</p>`:''}<div class="bar${c==T.length&&T.length?' full':''}"><i data-w="${T.length?100*c/T.length:0}"></i></div><p class="mut">Выполнено ${c} из ${T.length}</p></div>
  <div class="g p row"><div><div class="big" data-n="${Math.max(0,dn)}">${Math.max(0,dn)}</div><div class="mut">дней до начала приёма (${fd('2027-06-20')})</div></div><div class="mut">Цель: поступление в НИУ ВШЭ Пермь на базе СПО. План идёт до 1 июня 2027.</div></div>
- ${['s','w','m','f'].map(a=>{const t=areaTasks(a);return t.length?`<div class="gh fh${col[a]?' shut':''}" data-a=col data-k=${a}>${AN[a]}<span>${t.filter(isDone).length}/${t.length}</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div><div class="fold${col[a]?' shut':''}"><div>${grp(t)}</div></div>`:''}).join('')}`}
+ ${['s','w','m','f'].map(a=>{const t=areaTasks(a);return t.length?`<div class="gh fh${col[a]?' shut':''}" data-a=col data-k=${a}>${AN[a]}<span>${t.filter(isDone).length}/${t.length}</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div><div class="fold${col[a]?' shut':''}"><div>${grp(t)}</div></div>`:''}).join('')}
+ ${ownTaskBlock()}`}
 
 
 function study(){
@@ -246,6 +260,8 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b
  else if(a=='edit'){dd=b.dataset.k;scrollTo(0,0)}
  else if(a=='fin'){S.l2=iso(addD(TD,1))}
  else if(a=='ap')S.apps[D]=Math.max(0,(S.apps[D]||0)+ +b.dataset.n);
+ else if(a=='toggleOwnAdd'){ownAdd=!ownAdd;col.u=false;render();return}
+ else if(a=='addUserTask'){const x=v('utx').trim(),h=+v('uth')||0;if(!x||h<=0)return;S.userTasks[D]=Array.isArray(S.userTasks[D])?S.userTasks[D]:[];S.userTasks[D].push({id:'u-'+Date.now().toString(36),a:'u',x,h});ownAdd=false}
  else if(a=='addco'){if(!v('cn').trim())return;S.co.unshift({n:v('cn'),s:v('cs'),d:v('cd'),sal:v('csal'),bon:v('cbon'),con:v('ccon'),cm:v('ccm')})}
  else if(a=='delco')S.co.splice(i,1);
  else if(a=='adddebt'){if(!v('dn').trim()||!(+v('db')>0))return;S.debts.push({n:v('dn'),b:+v('db'),r:+v('dr')||0,p:+v('dp')||0,where:v('dw').trim()||'Не указано'})}
