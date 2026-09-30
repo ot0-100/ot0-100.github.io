@@ -7,12 +7,27 @@ const DEF=JSON.parse(JSON.stringify(S));
 try{Object.assign(S,JSON.parse(localStorage.getItem(K)||'{}'))}catch(e){}
 S.usdRate=Number(S.usdRate)>0?Number(S.usdRate):83.5588;
 S.moneyCurrency=S.moneyCurrency==='USD'?'USD':'RUB';
+
+// ---------- финансовая модель / миграция ----------
+const normFinance=()=>{
+  S.assets=Array.isArray(S.assets)?S.assets.map(x=>({...x,where:(x.where||'').trim()||'Не указано'})):[];
+  S.debts=Array.isArray(S.debts)?S.debts.map(x=>({...x,where:(x.where||'').trim()||'Не указано'})):[];
+  S.led=Array.isArray(S.led)?S.led:[];
+};
+normFinance();
+
 const save=()=>{S.ts=Date.now();try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}if(AU)qp()};
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fm=n=>Math.round(n).toLocaleString('ru-RU')+' ₽';
 const fdol=n=>'$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const mf=n=>S.moneyCurrency==='USD'?fdol(Number(n)/S.usdRate):fm(n);
+const fp=n=>{const v=Number(n)||0;return`${v>0?'+':''}${v.toLocaleString('ru-RU',{maximumFractionDigits:1})}%`};
 const balance=()=>S.led.reduce((a,x)=>a+(x.t==='Доход'?1:-1)*Number(x.a||0),0);
+const assetsTotal=()=>S.assets.reduce((a,x)=>a+Number(x.a||0),0);
+const debtsTotal=()=>S.debts.reduce((a,x)=>a+Number(x.b||0),0);
+const netWorth=()=>balance()+assetsTotal()-debtsTotal();
+const monthlyAssetIncome=()=>S.assets.reduce((a,x)=>a+Number(x.a||0)*Number(x.y||0)/1200,0);
+const monthlyDebtInterest=()=>S.debts.reduce((a,x)=>a+Number(x.b||0)*Number(x.r||0)/1200,0);
 const curBtn=()=>`<div class="currency"><button class="${S.moneyCurrency==='RUB'?'on':''}" data-a=currency data-k=RUB>₽</button><button class="${S.moneyCurrency==='USD'?'on':''}" data-a=currency data-k=USD>$</button></div>`;
 const rateText=()=>`1 $ = ${S.usdRate.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:4})} ₽`;
 const v=id=>document.getElementById(id).value;
@@ -82,14 +97,17 @@ const mdate=n=>{const t=new Date(TD);t.setMonth(t.getMonth()+n);return t.toLocal
 // ---------- экраны ----------
 function home0(){
  const T=tasks(TD),c=T.filter(isDone).length,nx=T.find(t=>!isDone(t)),wd=(TD.getDay()+6)%7,hr=new Date().getHours(),p=ph(TD);
- const gr=hr<5?'Доброй ночи':hr<12?'Доброе утро':hr<18?'Добрый день':'Добрый вечер',sh=areaTasks('s').reduce((a,t)=>a+t.h,0),ap=S.apps[D]||0,sm=sim(),dn=days(GOAL,TD),bal=balance();
+ const gr=hr<5?'Доброй ночи':hr<12?'Доброе утро':hr<18?'Добрый день':'Добрый вечер',sh=areaTasks('s').reduce((a,t)=>a+t.h,0),ap=S.apps[D]||0,sm=sim(),dn=days(GOAL,TD);
+ const cash=balance(),assets=assetsTotal(),debts=debtsTotal(),nw=netWorth(),yieldM=monthlyAssetIncome();
  const L=[`Сегодня ${WD[wd]}, день ${idx(TD)+1} плана.`,p?'Идёт основной этап: все предметы параллельно.':`Этап 1: Челпанов. Тема недели: ${LOG[Math.min(4,fw(TD))].toLowerCase()}. Остальные предметы откроются после него.`,
   `Учёба сегодня: ${sh} ч. ${S.hired?'Работа найдена.':wd<5?'Откликов отправлено: '+ap+' из 5.':'Работа: разбор недели и резюме.'}`];
  if(sm)L.push(sm.ok?`Долги закроются через ${sm.m} мес. (${mdate(sm.m)}).`:'Платежей по долгам не хватает даже на проценты.');
  if(hr>=18&&!S.led.some(x=>x.d==D))L.push('Доходы и расходы за сегодня ещё не внесены.');
  if(!T.length)L.length=1,L.push('План на эту дату не составлен.');
  return`<div class="hd"><img src="${document.querySelector('link[rel=icon]').href}" width="46" height="46" alt=""><h1>${gr}</h1></div>
- <div class="g p"><div class="row"><div><div class="mut">Баланс</div><div class="big">${mf(bal)}</div><div class="mut">Доходы − расходы</div></div>${curBtn()}</div><p class="mut" style="margin-top:10px">${rateText()} · изменить курс можно в разделе «Деньги».</p></div>
+ <div class="g p"><div class="row"><div><div class="mut">Чистый капитал</div><div class="big">${mf(nw)}</div><div class="mut">Деньги + активы − пассивы</div></div>${curBtn()}</div>
+ <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px"><div><div class="mut">Деньги</div><b>${mf(cash)}</b></div><div><div class="mut">Активы</div><b>${mf(assets)}</b></div><div><div class="mut">Пассивы</div><b>${mf(debts)}</b></div><div><div class="mut">Доход активов / мес.</div><b>${mf(yieldM)}</b></div></div>
+ <p class="mut" style="margin-top:10px">${rateText()} · подробный прогноз и раскладка активов/пассивов — в разделе «Деньги».</p></div>
  <div class="g p">${L.map(x=>'<p>'+x+'</p>').join('')}${nx?`<p style="margin-top:10px"><b>Следующий шаг:</b> ${nx.x}</p>`:''}<div class="bar${c==T.length&&T.length?' full':''}"><i data-w="${T.length?100*c/T.length:0}"></i></div><p class="mut">Выполнено ${c} из ${T.length}</p></div>
  <div class="g p row"><div><div class="big" data-n="${Math.max(0,dn)}">${Math.max(0,dn)}</div><div class="mut">дней до начала приёма (${fd('2027-06-20')})</div></div><div class="mut">Цель: поступление в НИУ ВШЭ Пермь на базе СПО. План идёт до 1 июня 2027.</div></div>
  ${['s','w','m','f'].map(a=>{const t=areaTasks(a);return t.length?`<div class="gh fh${col[a]?' shut':''}" data-a=col data-k=${a}>${AN[a]}<span>${t.filter(isDone).length}/${t.length}</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div><div class="fold${col[a]?' shut':''}"><div>${grp(t)}</div></div>`:''}).join('')}`}
@@ -134,23 +152,55 @@ function work(){
  <div class="row" style="margin-top:8px"><input id=csal placeholder="Зарплата"><input id=cbon placeholder="Бонусы и условия"><input id=ccon placeholder="Минусы"></div>
  <div class="row" style="margin-top:8px"><input id=ccm placeholder="Комментарий"><button class="b" data-a=addco>Добавить</button></div></div>${cards}`}
 
+function financeForecast(){
+ const now=new Date(TD.getFullYear(),TD.getMonth(),1);
+ const months={};
+ S.led.forEach(x=>{const k=String(x.d||'').slice(0,7);if(!/^\d{4}-\d{2}$/.test(k))return;months[k]=months[k]||{i:0,e:0};months[k][x.t==='Доход'?'i':'e']+=Number(x.a||0)});
+ const actual=Object.keys(months).sort().map(k=>({...months[k],k,net:months[k].i-months[k].e}));
+ const recent=actual.slice(-3).filter(x=>x.net!==0||x.i!==0||x.e!==0);
+ const avg=recent.length?recent.reduce((a,x)=>a+x.net,0)/recent.length:0;
+ let capital=netWorth();
+ const out=[];
+ for(let i=1;i<=6;i++){
+   const d=new Date(now.getFullYear(),now.getMonth()+i,1),label=d.toLocaleDateString('ru-RU',{month:'short',year:'numeric'});
+   const assetIncome=monthlyAssetIncome();
+   const debtInterest=monthlyDebtInterest();
+   const delta=avg+assetIncome-debtInterest;
+   const prev=capital;
+   capital+=delta;
+   const pct=Math.abs(prev)>0?delta/Math.abs(prev)*100:0;
+   out.push({label,capital,delta,pct});
+ }
+ return{actual,avg,out};
+}
+
 function money(){
- const sm=sim(),cap=S.assets.reduce((a,x)=>a+ +x.a,0),inc=S.assets.reduce((a,x)=>a+x.a*x.y/1200,0),bal=balance();
- const dr=S.debts.map((x,i)=>`<tr><td>${esc(x.n)}</td><td><input type=number data-c=debt data-i=${i} value="${x.b}" style="width:110px"></td><td>${x.r}%</td><td>${mf(x.p)}</td><td>${sm&&sm.d.find(q=>q.n==x.n&&q.m)?sm.d.find(q=>q.n==x.n).m+' мес.':''}</td><td><button class=x data-a=deldebt data-i=${i}>✕</button></td></tr>`).join('');
+ const sm=sim(),cash=balance(),cap=assetsTotal(),liab=debtsTotal(),nw=netWorth(),inc=monthlyAssetIncome(),interest=monthlyDebtInterest(),fc=financeForecast();
+ const dr=S.debts.map((x,i)=>`<tr><td><b>${esc(x.n)}</b><small><input type=text data-c=debtWhere data-i=${i} value="${esc(x.where||'Не указано')}" placeholder="У кого / где"></small></td><td><input type=number data-c=debt data-i=${i} value="${x.b}" style="width:110px"></td><td>${x.r}%</td><td>${mf(x.p)}</td><td>${sm&&sm.d.find(q=>q.n==x.n&&q.m)?sm.d.find(q=>q.n==x.n).m+' мес.':''}</td><td><button class=x data-a=deldebt data-i=${i}>✕</button></td></tr>`).join('');
  const mo={};S.led.forEach(x=>{const k=x.d.slice(0,7);mo[k]=mo[k]||{i:0,e:0};mo[k][x.t=='Доход'?'i':'e']+=+x.a});
  const mr=Object.keys(mo).sort().reverse().map(k=>{const r=mo[k],p=r.i-r.e;return`<tr><td>${k}</td><td>${mf(r.i)}</td><td>${mf(r.e)}</td><td class="${p>=0?'pos':'neg'}"><b>${p>=0?'+':''}${mf(p)}</b></td></tr>`}).join('');
  const lr=S.led.map((x,i)=>({...x,i})).sort((a,b)=>b.d.localeCompare(a.d)).slice(0,15).map(x=>`<tr><td>${x.d}</td><td>${x.t}</td><td>${esc(x.c)}</td><td class="${x.t=='Доход'?'pos':'neg'}">${mf(x.a)}</td><td><button class=x data-a=delled data-i=${x.i}>✕</button></td></tr>`).join('');
- const ar=S.assets.map((x,i)=>`<tr><td>${esc(x.n)}</td><td>${x.k}</td><td>${mf(x.a)}</td><td>${x.y}%</td><td>${mf(x.a*x.y/1200)}</td><td><button class=x data-a=delasset data-i=${x.i}>✕</button></td></tr>`).join('');
+ const ar=S.assets.map((x,i)=>`<tr><td><b>${esc(x.n)}</b><small><input type=text data-c=assetWhere data-i=${i} value="${esc(x.where||'Не указано')}" placeholder="Где / у кого"></small></td><td>${x.k}</td><td>${mf(x.a)}</td><td>${x.y}%</td><td>${mf(x.a*x.y/1200)}</td><td><button class=x data-a=delasset data-i=${i}>✕</button></td></tr>`).join('');
+ const assetPlaces={};S.assets.forEach(x=>{const k=x.where||'Не указано';assetPlaces[k]=(assetPlaces[k]||0)+Number(x.a||0)});
+ const debtPlaces={};S.debts.forEach(x=>{const k=x.where||'Не указано';debtPlaces[k]=(debtPlaces[k]||0)+Number(x.b||0)});
+ const assetPlaceRows=Object.entries(assetPlaces).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="r"><span><b>${esc(k)}</b><small>${S.assets.filter(x=>(x.where||'Не указано')==k).length} актив(ов)</small></span><em>${mf(v)}</em></div>`).join('');
+ const debtPlaceRows=Object.entries(debtPlaces).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="r"><span><b>${esc(k)}</b><small>${S.debts.filter(x=>(x.where||'Не указано')==k).length} обязательств</small></span><em>${mf(v)}</em></div>`).join('');
+ const forecastRows=fc.out.map(x=>`<tr><td>${x.label}</td><td>${mf(x.capital)}</td><td class="${x.delta>=0?'pos':'neg'}"><b>${x.delta>=0?'+':''}${mf(x.delta)}</b></td><td class="${x.pct>=0?'pos':'neg'}"><b>${fp(x.pct)}</b></td></tr>`).join('');
+ const actualRows=fc.actual.slice().reverse().map((x,i,arr)=>{const prev=arr[i+1];const pct=prev&&Math.abs(prev.net)>0?(x.net-prev.net)/Math.abs(prev.net)*100:0;return`<tr><td>${x.k}</td><td>${mf(x.i)}</td><td>${mf(x.e)}</td><td class="${x.net>=0?'pos':'neg'}">${x.net>=0?'+':''}${mf(x.net)}</td><td class="${pct>=0?'pos':'neg'}">${fp(pct)}</td></tr>`}).join('');
  return`<h1>Деньги</h1>
- <div class="g p"><div class="row"><div><div class="mut">Баланс</div><div class="big">${mf(bal)}</div><div class="mut">Доходы − расходы · ${mf(bal)} / ${S.moneyCurrency==='RUB'?fdol(bal/S.usdRate):fm(bal)}</div></div>${curBtn()}</div><div class="row" style="margin-top:12px"><label style="max-width:260px">Курс USD, ₽<input type=number min=0.01 step=.0001 data-c=usdRate value="${S.usdRate}"></label><span class="mut">Текущий курс в трекере: ${rateText()}. Все суммы и операции хранятся в рублях, переключатель меняет только отображение.</span></div></div>
- <div class="gh">Долги</div><div class="g p"><div class="row"><input id=dn placeholder="Название долга"><input id=db type=number placeholder="Остаток, ₽"><input id=dr type=number step=.1 placeholder="Ставка, % годовых"><input id=dp type=number placeholder="Платёж в мес., ₽"><button class="b" data-a=adddebt>Добавить</button></div></div>
- ${S.debts.length?`<div class="g wrap"><table><tr><th>Долг</th><th>Остаток, ₽</th><th>Ставка</th><th>Платёж</th><th>Закрыт через</th><th></th></tr>${dr}</table></div>
+ <div class="g p"><div class="row"><div><div class="mut">Чистый капитал</div><div class="big">${mf(nw)}</div><div class="mut">Деньги + активы − пассивы</div></div>${curBtn()}</div>
+ <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px"><div><div class="mut">Деньги</div><b>${mf(cash)}</b></div><div><div class="mut">Активы</div><b>${mf(cap)}</b></div><div><div class="mut">Пассивы</div><b>${mf(liab)}</b></div><div><div class="mut">Доход активов / мес.</div><b>${mf(inc)}</b></div></div>
+ <div class="row" style="margin-top:12px"><label style="max-width:260px">Курс USD, ₽<input type=number min=0.01 step=.0001 data-c=usdRate value="${S.usdRate}"></label><span class="mut">${rateText()}. Переключатель меняет только отображение, данные хранятся в рублях.</span></div></div>
+ <div class="gh">Пассивы · долги</div><div class="g p"><div class="row"><input id=dn placeholder="Название долга"><input id=db type=number placeholder="Остаток, ₽"><input id=dr type=number step=.1 placeholder="Ставка, % годовых"><input id=dp type=number placeholder="Платёж в мес., ₽"><input id=dw placeholder="У кого / где"><button class="b" data-a=adddebt>Добавить</button></div></div>
+ ${S.debts.length?`<div class="g wrap"><table><tr><th>Долг</th><th>Остаток</th><th>Ставка</th><th>Платёж</th><th>Закроется</th><th></th></tr>${dr}</table></div>
  <div class="g p"><div class="row"><label>Доп. платёж в месяц, ₽<input type=number data-c=extra value="${S.extra}"></label><label>Порядок погашения<select data-c=method><option value="av" ${S.method=='av'?'selected':''}>Сначала высокая ставка</option><option value="sn" ${S.method=='sn'?'selected':''}>Сначала малый остаток</option></select></label></div>
- ${sm.ok?`<p style="margin-top:10px"><b>Свобода от долгов через ${sm.m} мес. (${mdate(sm.m)}).</b> Переплата по процентам: ${mf(sm.int)}. Платим в месяц: ${mf(sm.budget)}.</p>`:'<p class="neg" style="margin-top:10px"><b>При таких платежах долг не гасится.</b> Увеличь платёж или доп. сумму.</p>'}</div>`:'<div class="g p mut">Добавь долги, и калькулятор покажет срок и переплату.</div>'}
- <div class="gh">Вклады, акции и другие активы</div><div class="g p"><div class="row"><input id=an placeholder="Название"><select id=ak><option>Вклад</option><option>Акции</option><option>Облигации</option><option>Другое</option></select><input id=aa type=number placeholder="Сумма, ₽"><input id=ay type=number step=.1 placeholder="Доходность, % годовых"><button class="b" data-a=addasset>Добавить</button></div></div>
- ${S.assets.length?`<div class="g wrap"><table><tr><th>Актив</th><th>Тип</th><th>Сумма</th><th>Доходность</th><th>Доход в мес.</th><th></th></tr>${ar}<tr><th>Итого</th><th></th><th>${mf(cap)}</th><th></th><th>${mf(inc)}</th><th></th></tr></table></div>`:''}
+ <p style="margin-top:10px"><b>Проценты по долгам сейчас:</b> ${mf(interest)} / мес.</p>${sm.ok?`<p><b>Свобода от долгов через ${sm.m} мес. (${mdate(sm.m)}).</b> Переплата по процентам: ${mf(sm.int)}. Платим в месяц: ${mf(sm.budget)}.</p>`:'<p class="neg"><b>При таких платежах долг не гасится.</b> Увеличь платёж или доп. сумму.</p>'}</div>`:'<div class="g p mut">Добавь долги — они автоматически войдут в расчёт чистого капитала.</div>'}
+ ${S.debts.length?`<div class="g p"><b>Где находятся пассивы</b>${debtPlaceRows}</div>`:''}
+ <div class="gh">Активы</div><div class="g p"><div class="row"><input id=an placeholder="Название"><select id=ak><option>Вклад</option><option>Акции</option><option>Облигации</option><option>Недвижимость</option><option>Наличные</option><option>Крипто</option><option>Другое</option></select><input id=aa type=number placeholder="Сумма, ₽"><input id=ay type=number step=.1 placeholder="Доходность, % годовых"><input id=aw placeholder="Где / у кого"><button class="b" data-a=addasset>Добавить</button></div></div>
+ ${S.assets.length?`<div class="g wrap"><table><tr><th>Актив</th><th>Тип</th><th>Сумма</th><th>Доходность</th><th>Доход / мес.</th><th></th></tr>${ar}<tr><th>Итого</th><th></th><th>${mf(cap)}</th><th></th><th>${mf(inc)}</th><th></th></tr></table></div><div class="g p"><b>Где находятся активы</b>${assetPlaceRows}</div>`:'<div class="g p mut">Добавь активы — они автоматически войдут в расчёт чистого капитала.</div>'}
+ <div class="gh">Прогноз чистого капитала · 6 месяцев</div><div class="g wrap"><table><tr><th>Месяц</th><th>Капитал</th><th>Изменение</th><th>% к прошлому</th></tr>${forecastRows}</table><p class="mut" style="margin:10px 12px 12px">Прогноз использует средний чистый результат последних до 3 месяцев + доходность активов − проценты по долгам. Погашение тела долга само по себе чистый капитал не меняет: деньги уменьшаются одновременно с пассивом.</p></div>
  <div class="gh">Доходы и расходы по месяцам</div><div class="g p"><div class="row"><input id=ld type=date value="${D}"><select id=lt><option>Расход</option><option>Доход</option></select><input id=lc placeholder="Категория"><input id=la type=number placeholder="Сумма, ₽"><button class="b" data-a=addled>Добавить</button></div></div>
- ${mr?`<div class="g wrap"><table><tr><th>Месяц</th><th>Доходы</th><th>Расходы</th><th>Итог</th></tr>${mr}</table></div><div class="gh">Последние операции</div><div class="g wrap"><table>${lr}</table></div>`:'<div class="g p mut">Операций пока нет. Добавь первую операцию выше — баланс появится автоматически.</div>'}`}
+ ${mr?`<div class="g wrap"><table><tr><th>Месяц</th><th>Доходы</th><th>Расходы</th><th>Итог</th></tr>${mr}</table></div>${actualRows?`<div class="g wrap"><table><tr><th>Месяц</th><th>Доходы</th><th>Расходы</th><th>Чистый поток</th><th>% к пред. потоку</th></tr>${actualRows}</table></div>`:''}<div class="gh">Последние операции</div><div class="g wrap"><table>${lr}</table></div>`:'<div class="g p mut">Операций пока нет. Добавь первую операцию выше — денежная часть баланса появится автоматически.</div>'}`}
 
 
 function fit(){
@@ -198,9 +248,9 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b
  else if(a=='ap')S.apps[D]=Math.max(0,(S.apps[D]||0)+ +b.dataset.n);
  else if(a=='addco'){if(!v('cn').trim())return;S.co.unshift({n:v('cn'),s:v('cs'),d:v('cd'),sal:v('csal'),bon:v('cbon'),con:v('ccon'),cm:v('ccm')})}
  else if(a=='delco')S.co.splice(i,1);
- else if(a=='adddebt'){if(!v('dn').trim()||!(+v('db')>0))return;S.debts.push({n:v('dn'),b:+v('db'),r:+v('dr')||0,p:+v('dp')||0})}
+ else if(a=='adddebt'){if(!v('dn').trim()||!(+v('db')>0))return;S.debts.push({n:v('dn'),b:+v('db'),r:+v('dr')||0,p:+v('dp')||0,where:v('dw').trim()||'Не указано'})}
  else if(a=='deldebt')S.debts.splice(i,1);
- else if(a=='addasset'){if(!v('an').trim()||!(+v('aa')>0))return;S.assets.push({n:v('an'),k:v('ak'),a:+v('aa'),y:+v('ay')||0})}
+ else if(a=='addasset'){if(!v('an').trim()||!(+v('aa')>0))return;S.assets.push({n:v('an'),k:v('ak'),a:+v('aa'),y:+v('ay')||0,where:v('aw').trim()||'Не указано'})}
  else if(a=='delasset')S.assets.splice(i,1);
  else if(a=='addled'){if(!(+v('la')>0)||!v('ld'))return;S.led.push({d:v('ld'),t:v('lt'),c:v('lc')||'Без категории',a:+v('la')})}
  else if(a=='delled')S.led.splice(i,1);
@@ -209,6 +259,8 @@ document.addEventListener('change',e=>{const t=e.target,c=t.dataset.c;if(!c||c==
  if(c=='tgl'){const s=t.dataset.d;S.done[s]=S.done[s]||{};S.done[s][t.dataset.k]=t.checked}
  else if(c=='stage')S.co[+t.dataset.i].s=t.value;
  else if(c=='debt')S.debts[+t.dataset.i].b=+t.value||0;
+ else if(c=='debtWhere')S.debts[+t.dataset.i].where=t.value.trim()||'Не указано';
+ else if(c=='assetWhere')S.assets[+t.dataset.i].where=t.value.trim()||'Не указано';
  else if(c=='extra')S.extra=+t.value||0;
  else if(c=='usdRate')S.usdRate=Math.max(.01,+t.value||83.5588);
  else if(c=='method')S.method=t.value;
@@ -230,7 +282,7 @@ const stat=()=>{const el=document.getElementById('sst');if(el)el.textContent=stt
 const fail=e=>{if(e.message=='auth'){AU=null;localStorage.removeItem('lt.auth');loginUI()}else{sync.st='err';sync.msg=e.message}stat()};
 function qp(){clearTimeout(pt);sync.st='busy';stat();pt=setTimeout(async()=>{try{await push();sync.st='ok';sync.t=Date.now();stat()}catch(e){fail(e)}},1200)}
 async function pull(){if(!AU)return;sync.st='busy';stat();try{const r=await rest('tracker?select=data'),d=r[0]&&r[0].data;
- if(d&&(d.ts||0)>(S.ts||0)){S=Object.assign(JSON.parse(JSON.stringify(DEF)),d);try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}render()}
+ if(d&&(d.ts||0)>(S.ts||0)){S=Object.assign(JSON.parse(JSON.stringify(DEF)),d);normFinance();try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}render()}
  else if(!d||(S.ts||0)>(d.ts||0))await push();
  sync.st='ok';sync.t=Date.now();stat()}catch(e){fail(e)}}
 function loginUI(){let el=document.getElementById('lg');if(!el){el=document.createElement('div');el.id='lg';el.className='lg';document.body.appendChild(el)}
