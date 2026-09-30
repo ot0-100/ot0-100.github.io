@@ -16,7 +16,7 @@ const normFinance=()=>{
 };
 normFinance();
 
-const save=()=>{S.ts=Date.now();try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}if(AU)qp()};
+const save=()=>{S.ts=Date.now();sync.dirty=true;try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}try{saveSync()}catch(e){}if(AU)qp()};
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fm=n=>Math.round(n).toLocaleString('ru-RU')+' ₽';
 const fdol=n=>'$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -189,7 +189,7 @@ function money(){
  const actualRows=fc.actual.slice().reverse().map((x,i,arr)=>{const prev=arr[i+1];const pct=prev&&Math.abs(prev.net)>0?(x.net-prev.net)/Math.abs(prev.net)*100:0;return`<tr><td>${x.k}</td><td>${mf(x.i)}</td><td>${mf(x.e)}</td><td class="${x.net>=0?'pos':'neg'}">${x.net>=0?'+':''}${mf(x.net)}</td><td class="${pct>=0?'pos':'neg'}">${fp(pct)}</td></tr>`}).join('');
  return`<h1>Деньги</h1>
  <div class="g p"><div class="row"><div><div class="mut">Чистый капитал</div><div class="big">${mf(nw)}</div><div class="mut">Деньги + активы − пассивы</div></div>${curBtn()}</div>
- <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px"><div><div class="mut">Деньги</div><b>${mf(cash)}</b></div><div><div class="mut">Активы</div><b>${mf(cap)}</b></div><div><div class="mut">Пассивы</div><b>${mf(liab)}</b></div><div><div class="mut">Доход активов / мес.</div><b>${mf(inc)}</b></div></div>
+ <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px"><div><div class="mut">Деньги</div><b>${mf(cash)}</b><small class="mut">доходы − расходы</small></div><div><div class="mut">Активы</div><b>${mf(cap)}</b><small class="mut">вклад / ценные бумаги / имущество</small></div><div><div class="mut">Пассивы</div><b>${mf(liab)}</b><small class="mut">текущие долги</small></div><div><div class="mut">Чистый капитал</div><b>${mf(nw)}</b><small class="mut">деньги + активы − пассивы</small></div></div>
  <div class="row" style="margin-top:12px"><label style="max-width:260px">Курс USD, ₽<input type=number min=0.01 step=.0001 data-c=usdRate value="${S.usdRate}"></label><span class="mut">${rateText()}. Переключатель меняет только отображение, данные хранятся в рублях.</span></div></div>
  <div class="gh">Пассивы · долги</div><div class="g p"><div class="row"><input id=dn placeholder="Название долга"><input id=db type=number placeholder="Остаток, ₽"><input id=dr type=number step=.1 placeholder="Ставка, % годовых"><input id=dp type=number placeholder="Платёж в мес., ₽"><input id=dw placeholder="У кого / где"><button class="b" data-a=adddebt>Добавить</button></div></div>
  ${S.debts.length?`<div class="g wrap"><table><tr><th>Долг</th><th>Остаток</th><th>Ставка</th><th>Платёж</th><th>Закроется</th><th></th></tr>${dr}</table></div>
@@ -237,7 +237,7 @@ function render(anim){
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a,i=+b.dataset.i;
  if(a=='login'||a=='signup'){auth(a);return}
  if(a=='syncnow'){pull();return}
- if(a=='logout'){if(confirm('Выйти? Данные останутся в облаке, а на этом устройстве будут удалены.')){AU=null;localStorage.removeItem('lt.auth');localStorage.removeItem(K);S=JSON.parse(JSON.stringify(DEF));sync.st='out';loginUI();render()}return}
+ if(a=='logout'){if(confirm('Выйти? Данные останутся в облаке, а на этом устройстве будут удалены.')){AU=null;localStorage.removeItem('lt.auth');localStorage.removeItem(K);localStorage.removeItem('lt.sync');S=JSON.parse(JSON.stringify(DEF));sync={st:'out',t:0,msg:'',remoteUpdatedAt:null,baseUpdatedAt:null,dirty:false};loginUI();render()}return}
  if(a=='col'){col[b.dataset.k]=!col[b.dataset.k];b.classList.toggle('shut');b.nextElementSibling.classList.toggle('shut');return}
  if(a=='tab'){tab=b.dataset.k;location.hash=tab;scrollTo(0,0)}
  else if(a=='currency'){S.moneyCurrency=b.dataset.k=='USD'?'USD':'RUB';save()}
@@ -270,21 +270,73 @@ document.addEventListener('change',e=>{const t=e.target,c=t.dataset.c;if(!c||c==
 document.addEventListener('input',e=>{if(e.target.dataset.c=='note'){S.notes[dd]=e.target.value;save()}});
 // ---------- Supabase ----------
 const CFG=window.SB||{},ON=!!(CFG.url&&CFG.key);let AU=null,pt;try{AU=JSON.parse(localStorage.getItem('lt.auth'))}catch(e){}
-let sync={st:ON?(AU?'ok':'out'):'off',t:0,msg:''};
+let sync={st:ON?(AU?'ok':'out'):'off',t:0,msg:'',remoteUpdatedAt:null,baseUpdatedAt:null,dirty:false};
+try{Object.assign(sync,JSON.parse(localStorage.getItem('lt.sync')||'{}'))}catch(e){}
+const saveSync=()=>{try{localStorage.setItem('lt.sync',JSON.stringify({remoteUpdatedAt:sync.remoteUpdatedAt,baseUpdatedAt:sync.baseUpdatedAt,dirty:sync.dirty}))}catch(e){}};
 const ru=m=>/invalid login/i.test(m)?'Неверная почта или пароль':/already|registered/i.test(m)?'Такой аккаунт уже есть, нажми «Войти»':/signups? (not allowed|disabled)/i.test(m)?'Регистрация отключена':/password/i.test(m)?'Пароль слишком короткий':m;
 async function gt(p,b){const r=await fetch(CFG.url+'/auth/v1/'+p,{method:'POST',headers:{apikey:CFG.key,'Content-Type':'application/json'},body:JSON.stringify(b)}),j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(ru(j.error_description||j.msg||j.message||'Ошибка входа'));return j}
 function setAu(j){const u=j.user||j;AU={at:j.access_token,rt:j.refresh_token,exp:Date.now()+(j.expires_in||3600)*1000,email:u.email||(AU&&AU.email),uid:u.id||(AU&&AU.uid)};localStorage.setItem('lt.auth',JSON.stringify(AU))}
 async function tok(){if(Date.now()>AU.exp-60000){try{setAu(await gt('token?grant_type=refresh_token',{refresh_token:AU.rt}))}catch(e){throw new Error('auth')}}return AU.at}
 async function rest(p,o={}){const r=await fetch(CFG.url+'/rest/v1/'+p,{...o,headers:{apikey:CFG.key,Authorization:'Bearer '+await tok(),'Content-Type':'application/json',...(o.headers||{})}});if(r.status==401)throw new Error('auth');if(!r.ok)throw new Error('Ошибка '+r.status);return r.status==204?null:r.json()}
-const push=()=>rest('tracker?on_conflict=user_id',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({user_id:AU.uid,data:S,updated_at:new Date().toISOString()})});
-const sttxt=()=>sync.st=='busy'?'Сохраняю…':sync.st=='err'?'Нет связи: '+sync.msg:'Синхронизировано'+(sync.t?' в '+new Date(sync.t).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):'');
+const push=async()=>{
+ if(!AU)return;
+ const body=JSON.stringify({user_id:AU.uid,data:S});
+ let r;
+ if(sync.remoteUpdatedAt){
+   const q='tracker?user_id=eq.'+encodeURIComponent(AU.uid)+'&updated_at=eq.'+encodeURIComponent(sync.remoteUpdatedAt);
+   r=await rest(q,{method:'PATCH',headers:{Prefer:'return=representation'},body:body});
+   if(!Array.isArray(r)||!r.length)throw new Error('conflict');
+ }else{
+   r=await rest('tracker?on_conflict=user_id',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=representation'},body:body});
+   if(!Array.isArray(r)||!r.length)throw new Error('conflict');
+ }
+ sync.remoteUpdatedAt=r[0].updated_at||sync.remoteUpdatedAt;
+ sync.baseUpdatedAt=sync.remoteUpdatedAt;
+ sync.dirty=false;
+ saveSync();
+ return r[0];
+};
+const sttxt=()=>sync.st=='busy'?'Сохраняю…':sync.st=='err'?'Нет связи: '+sync.msg:sync.st=='conflict'?'Обновлено на другом устройстве — загружена актуальная версия':'Синхронизировано'+(sync.t?' в '+new Date(sync.t).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):'');
 const stat=()=>{const el=document.getElementById('sst');if(el)el.textContent=sttxt()};
-const fail=e=>{if(e.message=='auth'){AU=null;localStorage.removeItem('lt.auth');loginUI()}else{sync.st='err';sync.msg=e.message}stat()};
+const fail=e=>{
+ if(e.message=='auth'){AU=null;localStorage.removeItem('lt.auth');loginUI();return}
+ if(e.message=='conflict'){sync.st='busy';stat();pull(true);return}
+ sync.st='err';sync.msg=e.message;stat()
+};
 function qp(){clearTimeout(pt);sync.st='busy';stat();pt=setTimeout(async()=>{try{await push();sync.st='ok';sync.t=Date.now();stat()}catch(e){fail(e)}},1200)}
-async function pull(){if(!AU)return;sync.st='busy';stat();try{const r=await rest('tracker?select=data'),d=r[0]&&r[0].data;
- if(d&&(d.ts||0)>(S.ts||0)){S=Object.assign(JSON.parse(JSON.stringify(DEF)),d);normFinance();try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}render()}
- else if(!d||(S.ts||0)>(d.ts||0))await push();
- sync.st='ok';sync.t=Date.now();stat()}catch(e){fail(e)}}
+async function pull(force=false){
+ if(!AU)return;
+ sync.st='busy';stat();
+ try{
+   const r=await rest('tracker?select=data,updated_at');
+   const row=r[0],d=row&&row.data,remote=row&&row.updated_at;
+   if(!d){
+     sync.remoteUpdatedAt=null;
+     sync.baseUpdatedAt=null;
+     saveSync();
+     await push();
+   }else if(sync.dirty&&!force){
+     if(sync.remoteUpdatedAt&&remote!==sync.remoteUpdatedAt){
+       sync.st='busy';sync.msg='';
+       S=Object.assign(JSON.parse(JSON.stringify(DEF)),d);normFinance();
+       sync.remoteUpdatedAt=remote;sync.baseUpdatedAt=remote;sync.dirty=false;saveSync();
+       try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}
+       render();
+       sync.st='conflict';sync.t=Date.now();stat();return;
+     }
+     await push();
+   }else{
+     S=Object.assign(JSON.parse(JSON.stringify(DEF)),d);
+     normFinance();
+     sync.remoteUpdatedAt=remote||null;
+     sync.baseUpdatedAt=remote||null;
+     sync.dirty=false;saveSync();
+     try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}
+     render();
+   }
+   sync.st='ok';sync.t=Date.now();stat();
+ }catch(e){fail(e)}
+}
 function loginUI(){let el=document.getElementById('lg');if(!el){el=document.createElement('div');el.id='lg';el.className='lg';document.body.appendChild(el)}
  el.innerHTML=`<div><img src="${document.querySelector('link[rel=icon]').href}" width="72" height="72" alt="" style="border-radius:16px"><h1 style="margin:16px 0 4px">Личный рост</h1><p class="mut" style="margin-bottom:18px">Войди, чтобы данные синхронизировались между телефоном и компьютером.</p><div class="g p"><input id=le type=email autocomplete=username placeholder="Почта"><input id=lp type=password autocomplete=current-password placeholder="Пароль, от 6 символов" style="margin-top:8px"></div><p class="neg" id=lerr></p><div class="row"><button class="b" data-a=login>Войти</button><button class="b2" data-a=signup>Создать аккаунт</button></div></div>`}
 async function auth(a){const e=v('le').trim(),p=v('lp'),er=document.getElementById('lerr');er.textContent='';if(!e||p.length<6){er.textContent='Введи почту и пароль от 6 символов';return}
@@ -295,6 +347,9 @@ function acct(){return ON&&AU?`<div class="gh">Синхронизация</div><
 function home(){return home0()+acct()}
 document.addEventListener('keydown',e=>{if(e.key=='Enter'&&e.target.id=='lp')auth('login')});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&AU)pull()});
+window.addEventListener('focus',()=>{if(AU&&!document.hidden)pull()});
+window.addEventListener('pageshow',()=>{if(AU&&!document.hidden)pull()});
+setInterval(()=>{if(AU&&!document.hidden&&!sync.dirty)pull()},60000);
 
 render(true);requestAnimationFrame(()=>navEl.classList.add('rdy'));addEventListener('resize',ind);
 if(ON){if(AU)pull();else loginUI()}
