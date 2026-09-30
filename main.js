@@ -2,12 +2,13 @@ const K='lifetracker.v2',WD=['понедельник','вторник','сред
 const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 const pd=s=>new Date(s+'T00:00'),addD=(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);
 const TD=pd(iso(new Date())),D=iso(TD),START=pd('2026-10-01'),END=pd('2027-06-01'),GOAL=pd('2027-06-20');
-let S={l2:null,done:{},apps:{},notes:{},co:[],debts:[],extra:0,method:'av',assets:[],led:[],hired:false,usdRate:83.5588,moneyCurrency:'RUB',userTasks:{}};
+let S={l2:null,done:{},apps:{},notes:{},co:[],debts:[],extra:0,method:'av',assets:[],led:[],hired:false,usdRate:83.5588,moneyCurrency:'RUB',userTasks:{},passives:{}};
 const DEF=JSON.parse(JSON.stringify(S));
 try{Object.assign(S,JSON.parse(localStorage.getItem(K)||'{}'))}catch(e){}
 S.usdRate=Number(S.usdRate)>0?Number(S.usdRate):83.5588;
 S.moneyCurrency=S.moneyCurrency==='USD'?'USD':'RUB';
 S.userTasks=(S.userTasks&&typeof S.userTasks==='object')?S.userTasks:{};
+S.passives=(S.passives&&typeof S.passives==='object')?S.passives:{};
 
 // ---------- финансовая модель / миграция ----------
 const normFinance=()=>{
@@ -31,6 +32,10 @@ const monthlyAssetIncome=()=>S.assets.reduce((a,x)=>a+Number(x.a||0)*Number(x.y|
 const monthlyDebtInterest=()=>S.debts.reduce((a,x)=>a+Number(x.b||0)*Number(x.r||0)/1200,0);
 const curBtn=()=>`<div class="currency"><button class="${S.moneyCurrency==='RUB'?'on':''}" data-a=currency data-k=RUB>₽</button><button class="${S.moneyCurrency==='USD'?'on':''}" data-a=currency data-k=USD>$</button></div>`;
 const rateText=()=>`1 $ = ${S.usdRate.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:4})} ₽`;
+const passiveList=()=>Object.entries(S.passives||{}).map(([id,x])=>({id,...x})).filter(x=>x&&String(x.n||'').trim()&&Number(x.a||0)>0);
+const passiveTotal=()=>passiveList().reduce((a,x)=>a+Number(x.a||0),0);
+const passiveWhereTotal=(where)=>passiveList().filter(x=>(x.where||'Не указано')===where).reduce((a,x)=>a+Number(x.a||0),0);
+
 const v=id=>document.getElementById(id).value;
 const days=(a,b)=>Math.round((a-b)/864e5),idx=d=>Math.max(0,days(d,START));
 const fd=(s,o)=>pd(s).toLocaleDateString('ru-RU',o||{day:'numeric',month:'long'});
@@ -111,7 +116,7 @@ const mdate=n=>{const t=new Date(TD);t.setMonth(t.getMonth()+n);return t.toLocal
 function home0(){
  const T=tasks(TD),c=T.filter(isDone).length,nx=T.find(t=>!isDone(t)),wd=(TD.getDay()+6)%7,hr=new Date().getHours(),p=ph(TD);
  const gr=hr<5?'Доброй ночи':hr<12?'Доброе утро':hr<18?'Добрый день':'Добрый вечер',sh=areaTasks('s').reduce((a,t)=>a+t.h,0),ap=S.apps[D]||0,sm=sim(),dn=days(GOAL,TD);
- const cash=balance(),assets=assetsTotal(),debts=debtsTotal(),nw=netWorth(),yieldM=monthlyAssetIncome();
+ const cash=balance(),assets=assetsTotal(),passives=passiveTotal(),debts=debtsTotal(),nw=netWorth(),yieldM=monthlyAssetIncome();
  const L=[`Сегодня ${WD[wd]}, день ${idx(TD)+1} плана.`,p?'Идёт основной этап: все предметы параллельно.':`Этап 1: Челпанов. Тема недели: ${LOG[Math.min(4,fw(TD))].toLowerCase()}. Остальные предметы откроются после него.`,
   `Учёба сегодня: ${sh} ч. ${S.hired?'Работа найдена.':wd<5?'Откликов отправлено: '+ap+' из 5.':'Работа: разбор недели и резюме.'}`];
  if(sm)L.push(sm.ok?`Долги закроются через ${sm.m} мес. (${mdate(sm.m)}).`:'Платежей по долгам не хватает даже на проценты.');
@@ -119,8 +124,8 @@ function home0(){
  if(!T.length)L.length=1,L.push('План на эту дату не составлен.');
  return`<div class="hd"><img src="${document.querySelector('link[rel=icon]').href}" width="46" height="46" alt=""><h1>${gr}</h1></div>
  <div class="g p"><div class="row"><div><div class="mut">Чистый капитал</div><div class="big">${mf(nw)}</div><div class="mut">Деньги + активы − пассивы</div></div>${curBtn()}</div>
- <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px"><div><div class="mut">Деньги</div><b>${mf(cash)}</b></div><div><div class="mut">Активы</div><b>${mf(assets)}</b></div><div><div class="mut">Пассивы</div><b>${mf(debts)}</b></div><div><div class="mut">Доход активов / мес.</div><b>${mf(yieldM)}</b></div></div>
- <p class="mut" style="margin-top:10px">${rateText()} · подробный прогноз и раскладка активов/пассивов — в разделе «Деньги».</p></div>
+ <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px"><div><div class="mut">Деньги</div><b>${mf(cash)}</b></div><div><div class="mut">Активы</div><b>${mf(assets)}</b></div><div><div class="mut">Пассивы / мес.</div><b>${mf(passives)}</b></div><div><div class="mut">Долги</div><b>${mf(debts)}</b></div><div><div class="mut">Доход активов / мес.</div><b>${mf(yieldM)}</b></div></div>
+ <p class="mut" style="margin-top:10px">${rateText()} · активы, регулярные расходы и долги — в разделе «Деньги». Прогноз учитывает только текущие активы, долги и регулярные расходы.</p><div class="row" style="margin-top:10px"><button class="b" data-a=report>Сформировать отчёт Excel</button><button class="b2" data-a=tab data-k=u>Мои задачи</button></div></div>
  <div class="g p">${L.map(x=>'<p>'+x+'</p>').join('')}${nx?`<p style="margin-top:10px"><b>Следующий шаг:</b> ${nx.x}</p>`:''}<div class="bar${c==T.length&&T.length?' full':''}"><i data-w="${T.length?100*c/T.length:0}"></i></div><p class="mut">Выполнено ${c} из ${T.length}</p></div>
  <div class="g p row"><div><div class="big" data-n="${Math.max(0,dn)}">${Math.max(0,dn)}</div><div class="mut">дней до начала приёма (${fd('2027-06-20')})</div></div><div class="mut">Цель: поступление в НИУ ВШЭ Пермь на базе СПО. План идёт до 1 июня 2027.</div></div>
  ${['s','w','m','f'].map(a=>{const t=areaTasks(a);return t.length?`<div class="gh fh${col[a]?' shut':''}" data-a=col data-k=${a}>${AN[a]}<span>${t.filter(isDone).length}/${t.length}</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div><div class="fold${col[a]?' shut':''}"><div>${grp(t)}</div></div>`:''}).join('')}
@@ -167,30 +172,41 @@ function work(){
  <div class="row" style="margin-top:8px"><input id=ccm placeholder="Комментарий"><button class="b" data-a=addco>Добавить</button></div></div>${cards}`}
 
 function financeForecast(){
- const now=new Date(TD.getFullYear(),TD.getMonth(),1);
- const months={};
- S.led.forEach(x=>{const k=String(x.d||'').slice(0,7);if(!/^\d{4}-\d{2}$/.test(k))return;months[k]=months[k]||{i:0,e:0};months[k][x.t==='Доход'?'i':'e']+=Number(x.a||0)});
- const actual=Object.keys(months).sort().map(k=>({...months[k],k,net:months[k].i-months[k].e}));
- const recent=actual.slice(-3).filter(x=>x.net!==0||x.i!==0||x.e!==0);
- const avg=recent.length?recent.reduce((a,x)=>a+x.net,0)/recent.length:0;
- let capital=netWorth();
+ const baseCash=balance(), baseAssets=(S.assets||[]).map(x=>({n:x.n,a:Math.max(0,Number(x.a)||0),y:Number(x.y)||0}));
+ const baseDebts=(S.debts||[]).map(x=>({n:x.n,b:Math.max(0,Number(x.b)||0),r:Number(x.r)||0,p:Math.max(0,Number(x.p)||0)})).filter(x=>x.b>0);
+ const pass=passiveTotal();
+ let cash=baseCash, assets=baseAssets.map(x=>({...x})), debts=baseDebts.map(x=>({...x}));
+ const baseNet=baseCash+baseAssets.reduce((a,x)=>a+x.a,0)-baseDebts.reduce((a,x)=>a+x.b,0);
  const out=[];
  for(let i=1;i<=6;i++){
-   const d=new Date(now.getFullYear(),now.getMonth()+i,1),label=d.toLocaleDateString('ru-RU',{month:'short',year:'numeric'});
-   const assetIncome=monthlyAssetIncome();
-   const debtInterest=monthlyDebtInterest();
-   const delta=avg+assetIncome-debtInterest;
-   const prev=capital;
-   capital+=delta;
-   const pct=Math.abs(prev)>0?delta/Math.abs(prev)*100:0;
-   out.push({label,capital,delta,pct});
+   assets.forEach(x=>{x.a*=1+(x.y/100)/12});
+   let debtInterest=0;
+   debts.forEach(x=>{
+     if(x.b<=0)return;
+     const interest=x.b*(x.r/100)/12; debtInterest+=interest;
+     x.b+=interest;
+     const pay=Math.min(x.b,x.p);
+     x.b-=pay;
+   });
+   cash-=pass;
+   const projectedAssets=assets.reduce((a,x)=>a+x.a,0);
+   const projectedDebts=debts.reduce((a,x)=>a+x.b,0);
+   const capital=cash+projectedAssets-projectedDebts;
+   const prevCapital=i===1?baseNet:out[out.length-1].capital;
+   const delta=capital-prevCapital;
+   const pct=Math.abs(prevCapital)>0?delta/Math.abs(prevCapital)*100:0;
+   const d=new Date(TD.getFullYear(),TD.getMonth()+i,1);
+   out.push({label:d.toLocaleDateString('ru-RU',{month:'short',year:'numeric'}),cash,assets:projectedAssets,passives:pass,debts:projectedDebts,capital,delta,pct});
  }
- return{actual,avg,out};
+ return{out,baseCash,baseAssets:baseAssets.reduce((a,x)=>a+x.a,0),baseDebts:baseDebts.reduce((a,x)=>a+x.b,0),passives:pass,baseNet};
 }
+const monthlyCapitalDelta=()=>{const f=financeForecast();return f.out[0]?.delta||0};
+const monthlyCapitalPct=()=>{const f=financeForecast();return f.out[0]?.pct||0};
 
 function money(){
- const sm=sim(),cash=balance(),cap=assetsTotal(),liab=debtsTotal(),nw=netWorth(),inc=monthlyAssetIncome(),interest=monthlyDebtInterest(),fc=financeForecast();
+ const sm=sim(),cash=balance(),cap=assetsTotal(),liab=debtsTotal(),passives=passiveTotal(),nw=netWorth(),inc=monthlyAssetIncome(),interest=monthlyDebtInterest(),fc=financeForecast();
  const dr=S.debts.map((x,i)=>`<tr><td><b>${esc(x.n)}</b><small><input type=text data-c=debtWhere data-i=${i} value="${esc(x.where||'Не указано')}" placeholder="У кого / где"></small></td><td><input type=number data-c=debt data-i=${i} value="${x.b}" style="width:110px"></td><td>${x.r}%</td><td>${mf(x.p)}</td><td>${sm&&sm.d.find(q=>q.n==x.n&&q.m)?sm.d.find(q=>q.n==x.n).m+' мес.':''}</td><td><button class=x data-a=deldebt data-i=${i}>✕</button></td></tr>`).join('');
+ const pr=passiveList().map(x=>`<tr><td><b>${esc(x.n)}</b></td><td>${esc(x.k||'Другое')}</td><td>${mf(x.a)}</td><td>${esc(x.where||'Не указано')}</td><td><button class=x data-a=delpassive data-id=${esc(x.id)}>✕</button></td></tr>`).join('');
  const mo={};S.led.forEach(x=>{const k=x.d.slice(0,7);mo[k]=mo[k]||{i:0,e:0};mo[k][x.t=='Доход'?'i':'e']+=+x.a});
  const mr=Object.keys(mo).sort().reverse().map(k=>{const r=mo[k],p=r.i-r.e;return`<tr><td>${k}</td><td>${mf(r.i)}</td><td>${mf(r.e)}</td><td class="${p>=0?'pos':'neg'}"><b>${p>=0?'+':''}${mf(p)}</b></td></tr>`}).join('');
  const lr=S.led.map((x,i)=>({...x,i})).sort((a,b)=>b.d.localeCompare(a.d)).slice(0,15).map(x=>`<tr><td>${x.d}</td><td>${x.t}</td><td>${esc(x.c)}</td><td class="${x.t=='Доход'?'pos':'neg'}">${mf(x.a)}</td><td><button class=x data-a=delled data-i=${x.i}>✕</button></td></tr>`).join('');
@@ -199,23 +215,22 @@ function money(){
  const debtPlaces={};S.debts.forEach(x=>{const k=x.where||'Не указано';debtPlaces[k]=(debtPlaces[k]||0)+Number(x.b||0)});
  const assetPlaceRows=Object.entries(assetPlaces).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="r"><span><b>${esc(k)}</b><small>${S.assets.filter(x=>(x.where||'Не указано')==k).length} актив(ов)</small></span><em>${mf(v)}</em></div>`).join('');
  const debtPlaceRows=Object.entries(debtPlaces).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="r"><span><b>${esc(k)}</b><small>${S.debts.filter(x=>(x.where||'Не указано')==k).length} обязательств</small></span><em>${mf(v)}</em></div>`).join('');
- const forecastRows=fc.out.map(x=>`<tr><td>${x.label}</td><td>${mf(x.capital)}</td><td class="${x.delta>=0?'pos':'neg'}"><b>${x.delta>=0?'+':''}${mf(x.delta)}</b></td><td class="${x.pct>=0?'pos':'neg'}"><b>${fp(x.pct)}</b></td></tr>`).join('');
- const actualRows=fc.actual.slice().reverse().map((x,i,arr)=>{const prev=arr[i+1];const pct=prev&&Math.abs(prev.net)>0?(x.net-prev.net)/Math.abs(prev.net)*100:0;return`<tr><td>${x.k}</td><td>${mf(x.i)}</td><td>${mf(x.e)}</td><td class="${x.net>=0?'pos':'neg'}">${x.net>=0?'+':''}${mf(x.net)}</td><td class="${pct>=0?'pos':'neg'}">${fp(pct)}</td></tr>`}).join('');
+ const forecastRows=fc.out.map(x=>`<tr><td>${x.label}</td><td>${mf(x.cash)}</td><td>${mf(x.assets)}</td><td>${mf(x.passives)}</td><td>${mf(x.debts)}</td><td>${mf(x.capital)}</td><td class="${x.delta>=0?'pos':'neg'}"><b>${x.delta>=0?'+':''}${mf(x.delta)}</b></td><td class="${x.pct>=0?'pos':'neg'}"><b>${x.pct>=0?'+':''}${x.pct.toLocaleString('ru-RU',{maximumFractionDigits:1})}%</b></td></tr>`).join('');
  return`<h1>Деньги</h1>
- <div class="g p"><div class="row"><div><div class="mut">Чистый капитал</div><div class="big">${mf(nw)}</div><div class="mut">Деньги + активы − пассивы</div></div>${curBtn()}</div>
- <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px"><div><div class="mut">Деньги</div><b>${mf(cash)}</b><small class="mut">доходы − расходы</small></div><div><div class="mut">Активы</div><b>${mf(cap)}</b><small class="mut">вклад / ценные бумаги / имущество</small></div><div><div class="mut">Пассивы</div><b>${mf(liab)}</b><small class="mut">текущие долги</small></div><div><div class="mut">Чистый капитал</div><b>${mf(nw)}</b><small class="mut">деньги + активы − пассивы</small></div></div>
- <div class="row" style="margin-top:12px"><label style="max-width:260px">Курс USD, ₽<input type=number min=0.01 step=.0001 data-c=usdRate value="${S.usdRate}"></label><span class="mut">${rateText()}. Переключатель меняет только отображение, данные хранятся в рублях.</span></div></div>
- <div class="gh">Пассивы · долги</div><div class="g p"><div class="row"><input id=dn placeholder="Название долга"><input id=db type=number placeholder="Остаток, ₽"><input id=dr type=number step=.1 placeholder="Ставка, % годовых"><input id=dp type=number placeholder="Платёж в мес., ₽"><input id=dw placeholder="У кого / где"><button class="b" data-a=adddebt>Добавить</button></div></div>
- ${S.debts.length?`<div class="g wrap"><table><tr><th>Долг</th><th>Остаток</th><th>Ставка</th><th>Платёж</th><th>Закроется</th><th></th></tr>${dr}</table></div>
- <div class="g p"><div class="row"><label>Доп. платёж в месяц, ₽<input type=number data-c=extra value="${S.extra}"></label><label>Порядок погашения<select data-c=method><option value="av" ${S.method=='av'?'selected':''}>Сначала высокая ставка</option><option value="sn" ${S.method=='sn'?'selected':''}>Сначала малый остаток</option></select></label></div>
- <p style="margin-top:10px"><b>Проценты по долгам сейчас:</b> ${mf(interest)} / мес.</p>${sm.ok?`<p><b>Свобода от долгов через ${sm.m} мес. (${mdate(sm.m)}).</b> Переплата по процентам: ${mf(sm.int)}. Платим в месяц: ${mf(sm.budget)}.</p>`:'<p class="neg"><b>При таких платежах долг не гасится.</b> Увеличь платёж или доп. сумму.</p>'}</div>`:'<div class="g p mut">Добавь долги — они автоматически войдут в расчёт чистого капитала.</div>'}
- ${S.debts.length?`<div class="g p"><b>Где находятся пассивы</b>${debtPlaceRows}</div>`:''}
+ <div class="g p"><div class="row"><div><div class="mut">Чистый капитал</div><div class="big">${mf(nw)}</div><div class="mut">Деньги + активы − долги</div></div>${curBtn()}</div>
+ <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px"><div><div class="mut">Деньги</div><b>${mf(cash)}</b></div><div><div class="mut">Активы</div><b>${mf(cap)}</b></div><div><div class="mut">Пассивы / мес.</div><b>${mf(passives)}</b></div><div><div class="mut">Долги</div><b>${mf(liab)}</b></div><div><div class="mut">Доход активов / мес.</div><b>${mf(inc)}</b></div><div><div class="mut">Проценты по долгам / мес.</div><b>${mf(interest)}</b></div></div>
+ <div class="row" style="margin-top:12px"><label style="max-width:260px">Курс USD, ₽<input type=number min=0.01 step=.0001 data-c=usdRate value="${S.usdRate}"></label><span class="mut">${rateText()}. Пассивы — это регулярные расходы; долги считаются отдельно.</span></div></div>
+ <div class="gh">Пассивы · регулярные расходы</div><div class="g p"><div class="row"><input id=pn placeholder="Например: Съём жилья"><select id=pk><option>Жильё</option><option>Коммунальные</option><option>Связь</option><option>Подписки</option><option>Транспорт</option><option>Питание</option><option>Другое</option></select><input id=pa type=number min=0.01 placeholder="Сумма в месяц, ₽"><input id=pw placeholder="Где / кому"><button class="b" data-a=addpassive>Добавить</button></div></div>
+ ${pr?`<div class="g wrap"><table><tr><th>Расход</th><th>Категория</th><th>В месяц</th><th>Где / кому</th><th></th></tr>${pr}<tr><th>Итого</th><th></th><th>${mf(passives)}</th><th></th><th></th></tr></table></div>`:'<div class="g p mut">Регулярных расходов пока нет. Добавь, например, аренду жилья — она будет учитываться в прогнозе каждого следующего месяца.</div>'}
+ <div class="gh">Долги</div><div class="g p"><div class="row"><input id=dn placeholder="Название долга"><input id=db type=number placeholder="Остаток, ₽"><input id=dr type=number step=.1 placeholder="Ставка, % годовых"><input id=dp type=number placeholder="Платёж в мес., ₽"><input id=dw placeholder="У кого / где"><button class="b" data-a=adddebt>Добавить</button></div></div>
+ ${S.debts.length?`<div class="g wrap"><table><tr><th>Долг</th><th>Остаток</th><th>Ставка</th><th>Платёж</th><th>Закроется</th><th></th></tr>${dr}</table></div><div class="g p"><div class="row"><label>Доп. платёж в месяц, ₽<input type=number data-c=extra value="${S.extra}"></label><label>Порядок погашения<select data-c=method><option value="av" ${S.method=='av'?'selected':''}>Сначала высокая ставка</option><option value="sn" ${S.method=='sn'?'selected':''}>Сначала малый остаток</option></select></label></div><p style="margin-top:10px"><b>Проценты по долгам сейчас:</b> ${mf(interest)} / мес.</p>${sm.ok?`<p><b>Свобода от долгов через ${sm.m} мес. (${mdate(sm.m)}).</b> Переплата по процентам: ${mf(sm.int)}. Платим в месяц: ${mf(sm.budget)}.</p>`:'<p class="neg"><b>При таких платежах долг не гасится.</b> Увеличь платёж или доп. сумму.</p>'}</div>`:'<div class="g p mut">Добавь долги — они автоматически войдут в расчёт чистого капитала.</div>'}
+ ${S.debts.length?`<div class="g p"><b>Где находятся долги</b>${debtPlaceRows}</div>`:''}
  <div class="gh">Активы</div><div class="g p"><div class="row"><input id=an placeholder="Название"><select id=ak><option>Вклад</option><option>Акции</option><option>Облигации</option><option>Недвижимость</option><option>Наличные</option><option>Крипто</option><option>Другое</option></select><input id=aa type=number placeholder="Сумма, ₽"><input id=ay type=number step=.1 placeholder="Доходность, % годовых"><input id=aw placeholder="Где / у кого"><button class="b" data-a=addasset>Добавить</button></div></div>
  ${S.assets.length?`<div class="g wrap"><table><tr><th>Актив</th><th>Тип</th><th>Сумма</th><th>Доходность</th><th>Доход / мес.</th><th></th></tr>${ar}<tr><th>Итого</th><th></th><th>${mf(cap)}</th><th></th><th>${mf(inc)}</th><th></th></tr></table></div><div class="g p"><b>Где находятся активы</b>${assetPlaceRows}</div>`:'<div class="g p mut">Добавь активы — они автоматически войдут в расчёт чистого капитала.</div>'}
- <div class="gh">Прогноз чистого капитала · 6 месяцев</div><div class="g wrap"><table><tr><th>Месяц</th><th>Капитал</th><th>Изменение</th><th>% к прошлому</th></tr>${forecastRows}</table><p class="mut" style="margin:10px 12px 12px">Прогноз использует средний чистый результат последних до 3 месяцев + доходность активов − проценты по долгам. Погашение тела долга само по себе чистый капитал не меняет: деньги уменьшаются одновременно с пассивом.</p></div>
+ <div class="gh">Прогноз на 6 месяцев</div><div class="g wrap"><table><tr><th>Месяц</th><th>Деньги</th><th>Активы</th><th>Пассивы / мес.</th><th>Долги</th><th>Чистый капитал</th><th>Изменение</th><th>%</th></tr>${forecastRows}</table><p class="mut" style="margin:10px 12px 12px">Консервативный прогноз: новых доходов в нём нет. Каждый месяц из денег вычитаются регулярные расходы, активы растут по своей доходности, а долги уменьшаются по процентам и платежам. Поэтому изменение прогноза зависит от твоих текущих активов, пассивов и долгов.</p></div>
  <div class="gh">Доходы и расходы по месяцам</div><div class="g p"><div class="row"><input id=ld type=date value="${D}"><select id=lt><option>Расход</option><option>Доход</option></select><input id=lc placeholder="Категория"><input id=la type=number placeholder="Сумма, ₽"><button class="b" data-a=addled>Добавить</button></div></div>
- ${mr?`<div class="g wrap"><table><tr><th>Месяц</th><th>Доходы</th><th>Расходы</th><th>Итог</th></tr>${mr}</table></div>${actualRows?`<div class="g wrap"><table><tr><th>Месяц</th><th>Доходы</th><th>Расходы</th><th>Чистый поток</th><th>% к пред. потоку</th></tr>${actualRows}</table></div>`:''}<div class="gh">Последние операции</div><div class="g wrap"><table>${lr}</table></div>`:'<div class="g p mut">Операций пока нет. Добавь первую операцию выше — денежная часть баланса появится автоматически.</div>'}`}
-
+ ${mr?`<div class="g wrap"><table><tr><th>Месяц</th><th>Доходы</th><th>Расходы</th><th>Итог</th></tr>${mr}</table></div><div class="gh">Последние операции</div><div class="g wrap"><table>${lr}</table></div>`:'<div class="g p mut">Операций пока нет. Добавь первую операцию выше — баланс появится автоматически.</div>'}`
+}
 
 function fit(){
  const mon=addD(TD,-((TD.getDay()+6)%7)),w=fw(TD),bl=Math.min(3,Math.floor(w/8));
@@ -231,6 +246,85 @@ function diary(){
  const ks=Object.keys(S.notes).filter(k=>S.notes[k]&&S.notes[k].trim()&&k!=dd).sort().reverse();
  return`<h1>Дневник</h1><div class="g p"><input type=date data-c=ddate value="${dd}"><textarea data-c=note placeholder="Что было за день: что сделал, что получилось, что не успел, что перенести">${esc(S.notes[dd])}</textarea><p class="mut">Запись сохраняется автоматически.</p></div>
  ${ks.length?'<div class="gh">Прошлые записи</div>'+ks.map(k=>`<button class="g p ent" data-a=edit data-k=${k}><b>${fd(k,{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</b><p>${esc(S.notes[k].slice(0,140))}</p></button>`).join(''):''}`}
+
+// ---------- AI Excel report ----------
+const reportDateLabel=s=>s?pd(s).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'}):'';
+const reportRows=(headers,rows)=>[headers,...rows];
+const sheet=rows=>{
+ const ws=XLSX.utils.aoa_to_sheet(rows);
+ const cols=(rows[0]||[]).map((_,i)=>Math.min(46,Math.max(12,...rows.slice(0,60).map(r=>String(r?.[i]??'').length+2))));
+ ws['!cols']=cols.map(w=>({wch:w}));
+ return ws;
+};
+function generateReport(){
+ if(!window.XLSX){alert('Excel-модуль ещё не загрузился. Проверь интернет и попробуй ещё раз.');return;}
+ const book=XLSX.utils.book_new(), today=new Date();
+ const allDates=[];
+ for(let d=new Date(START);d<=END;d=addD(d,1)) allDates.push(iso(d));
+ Object.keys(S.userTasks||{}).forEach(d=>{if(!allDates.includes(d))allDates.push(d)});
+ allDates.sort();
+ const todayTasks=tasks(TD), doneToday=todayTasks.filter(isDone).length;
+ const allTaskRows=allDates.flatMap(d=>tasks(pd(d)).map(t=>[d,AN[t.a]||t.a,t.x,Number(t.h||0),doneOn(d,t)?'Да':'Нет',t.d||'']));
+ const ownRows=allDates.flatMap(d=>(S.userTasks[d]||[]).map(t=>[d,t.x,Number(t.h||0),doneOn(d,t)?'Да':'Нет']));
+ const financeRows=(S.led||[]).slice().sort((a,b)=>String(a.d).localeCompare(String(b.d))).map(x=>[x.d,x.t,x.c||'',Number(x.a||0)]);
+ const monthMap={}; financeRows.forEach(r=>{const k=String(r[0]).slice(0,7);monthMap[k]??={inc:0,exp:0};monthMap[k][r[1]==='Доход'?'inc':'exp']+=Number(r[3]||0)});
+ const monthRows=Object.keys(monthMap).sort().map(k=>{const r=monthMap[k],net=r.inc-r.exp;return[k,r.inc,r.exp,net,r.inc?net/r.inc:0]});
+ const taskTotal=allTaskRows.length,taskDone=allTaskRows.filter(r=>r[4]==='Да').length,planned=allTaskRows.reduce((a,r)=>a+r[3],0),doneHours=allTaskRows.filter(r=>r[4]==='Да').reduce((a,r)=>a+r[3],0);
+ const diaryRows=Object.keys(S.notes||{}).sort().map(k=>[k,S.notes[k]]).filter(r=>r[1]);
+ const add=(name,rows)=>XLSX.utils.book_append_sheet(book,sheet(rows),name);
+ add('Сводка',[
+  ['LIFE TRACKER — ОТЧЁТ ДЛЯ ИИ'],
+  ['Сформирован',today.toLocaleString('ru-RU')],
+  ['Период плана',`${reportDateLabel(iso(START))} — ${reportDateLabel(iso(END))}`],
+  [],
+  ['Финансы','Значение'],
+  ['Деньги / net cash flow сейчас',balance()],
+  ['Активы',assetsTotal()],
+  ['Пассивы / мес.',passiveTotal()],
+  ['Долги',debtsTotal()],
+  ['Чистый капитал',netWorth()],
+  ['Доход активов / мес.',monthlyAssetIncome()],
+  ['Проценты по долгам / мес.',monthlyDebtInterest()],
+  ['Пассивы / мес.',passiveTotal()],
+  ['Изменение чистой позиции / мес.',monthlyCapitalDelta()],
+  ['Изменение чистой позиции / мес. %',monthlyCapitalPct()/100],
+  [],
+  ['Задачи','Значение'],
+  ['Задач за период',taskTotal],
+  ['Выполнено',taskDone],
+  ['Выполнение задач %',taskTotal?taskDone/taskTotal:0],
+  ['Плановые часы',planned],
+  ['Выполненные часы',doneHours],
+  ['Сегодня выполнено',`${doneToday}/${todayTasks.length}`],
+  [],
+  ['Работа — компании',S.co.length],
+  ['Работа — откликов сегодня',S.apps[D]||0],
+  ['Работа — откликов за 7 дней',[0,1,2,3,4,5,6].reduce((a,k)=>a+(S.apps[iso(addD(TD,-k))]||0),0)],
+  ['Учёба — отмеченные часы',Object.keys(S.done||{}).reduce((a,d)=>a+tasks(pd(d)).filter(t=>t.a==='s'&&S.done[d]?.[t.id]).reduce((x,t)=>x+t.h,0),0)],
+  ['Спорт — выполнено',Object.keys(S.done||{}).reduce((a,d)=>a+tasks(pd(d)).filter(t=>t.a==='f'&&S.done[d]?.[t.id]).length,0)],
+  ['Дневник — записей',diaryRows.length],
+  [],
+  ['Важно','Активы и долги в текущей модели — это текущий снимок. Не считать их историческим балансом прошлых месяцев.']
+ ]);
+ add('Задачи',reportRows(['Дата','Раздел','Задача','Часы','Готово','Описание'],allTaskRows));
+ add('Мои_задачи',reportRows(['Дата','Задача','Часы','Готово'],ownRows));
+ add('Финансы',reportRows(['Дата','Тип','Категория','Сумма ₽'],financeRows));
+ add('Финансы_по_месяцам',reportRows(['Месяц','Доходы ₽','Расходы ₽','Net cash flow ₽','Savings rate'],monthRows));
+ add('Активы',reportRows(['Название','Тип','Сумма ₽','Доходность % годовых','Доход / мес. ₽','Где / у кого'],(S.assets||[]).map(x=>[x.n,x.k,Number(x.a||0),Number(x.y||0),Number(x.a||0)*Number(x.y||0)/1200,x.where||'Не указано'])));
+ add('Пассивы_регулярные',reportRows(['Название','Категория','Сумма / мес. ₽','Где / кому'],passiveList().map(x=>[x.n,x.k||'Другое',Number(x.a||0),x.where||'Не указано'])));
+ add('Долги',reportRows(['Название','Остаток ₽','Ставка % годовых','Платёж ₽/мес.','Где / кому'],(S.debts||[]).map(x=>[x.n,Number(x.b||0),Number(x.r||0),Number(x.p||0),x.where||'Не указано'])));
+ const fcast=financeForecast().out;
+ add('Прогноз_финансы',reportRows(['Месяц','Деньги ₽','Активы ₽','Пассивы / мес. ₽','Долги ₽','Чистый капитал ₽','Изменение ₽','Изменение %'],fcast.map(x=>[x.label,x.cash,x.assets,x.passives,x.debts,x.capital,x.delta,x.pct/100])));
+ add('Работа',reportRows(['Компания','Этап','Дата','Зарплата','Бонусы/условия','Минусы','Комментарий'],(S.co||[]).map(x=>[x.n,x.s,x.d||'',x.sal||'',x.bon||'',x.con||'',x.cm||''])));
+ add('Отклики',reportRows(['Дата','Отклики'],Object.keys(S.apps||{}).sort().map(k=>[k,Number(S.apps[k]||0)])));
+ add('Учёба',reportRows(['Дата','Предмет','Задача/тема','Часы','Готово'],allDates.flatMap(d=>tasks(pd(d)).filter(t=>t.a==='s').map(t=>[d,t.x,t.d||'',Number(t.h||0),doneOn(d,t)?'Да':'Нет']))));
+ add('Спорт',reportRows(['Дата','Тренировка','Часы','Готово'],allDates.flatMap(d=>tasks(pd(d)).filter(t=>t.a==='f').map(t=>[d,t.x,Number(t.h||0),doneOn(d,t)?'Да':'Нет']))));
+ add('Дневник',reportRows(['Дата','Запись'],diaryRows));
+ const prompt=`Проанализируй этот Excel как личный операционный отчёт. Используй только данные файла. Отдельно разберись в финансах, задачах, учёбе, работе, спорте и дневнике. Для каждого направления укажи факты с цифрами, динамику, проблемы и гипотезы. Затем дай конкретные следующие шаги на 7 дней и на 30 дней с измеримыми критериями. Не выдумывай историческую стоимость активов/долгов: в отчёте она дана как текущий снимок. Для каждого процента показывай базу расчёта. В конце укажи, каких данных не хватает для более точного анализа.`;
+ add('Промпт_для_ИИ',[['Готовый промпт'],[prompt]]);
+ const file=`LifeTracker_AI_${iso(TD)}.xlsx`;
+ XLSX.writeFile(book,file,{compression:true});
+}
 
 // ---------- рендер и события ----------
 const V={h:home,k:cal,s:study,w:work,m:money,f:fit,d:diary};
@@ -251,6 +345,7 @@ function render(anim){
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a,i=+b.dataset.i;
  if(a=='login'||a=='signup'){auth(a);return}
  if(a=='syncnow'){pull();return}
+ if(a=='report'){generateReport();return}
  if(a=='logout'){if(confirm('Выйти? Данные останутся в облаке, а на этом устройстве будут удалены.')){AU=null;localStorage.removeItem('lt.auth');localStorage.removeItem(K);localStorage.removeItem('lt.sync');S=JSON.parse(JSON.stringify(DEF));sync={st:'out',t:0,msg:'',remoteUpdatedAt:null,baseUpdatedAt:null,dirty:false};loginUI();render()}return}
  if(a=='col'){col[b.dataset.k]=!col[b.dataset.k];b.classList.toggle('shut');b.nextElementSibling.classList.toggle('shut');return}
  if(a=='tab'){tab=b.dataset.k;location.hash=tab;scrollTo(0,0)}
@@ -264,6 +359,8 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b
  else if(a=='addUserTask'){const x=v('utx').trim(),h=+v('uth')||0;if(!x||h<=0)return;S.userTasks[D]=Array.isArray(S.userTasks[D])?S.userTasks[D]:[];S.userTasks[D].push({id:'u-'+Date.now().toString(36),a:'u',x,h});ownAdd=false}
  else if(a=='addco'){if(!v('cn').trim())return;S.co.unshift({n:v('cn'),s:v('cs'),d:v('cd'),sal:v('csal'),bon:v('cbon'),con:v('ccon'),cm:v('ccm')})}
  else if(a=='delco')S.co.splice(i,1);
+ else if(a=='addpassive'){if(!v('pn').trim()||!(+v('pa')>0))return;const id='p-'+Date.now().toString(36);S.passives[id]={n:v('pn').trim(),k:v('pk'),a:+v('pa'),where:v('pw').trim()||'Не указано'};}
+ else if(a=='delpassive'){delete S.passives[b.dataset.id]}
  else if(a=='adddebt'){if(!v('dn').trim()||!(+v('db')>0))return;S.debts.push({n:v('dn'),b:+v('db'),r:+v('dr')||0,p:+v('dp')||0,where:v('dw').trim()||'Не указано'})}
  else if(a=='deldebt')S.debts.splice(i,1);
  else if(a=='addasset'){if(!v('an').trim()||!(+v('aa')>0))return;S.assets.push({n:v('an'),k:v('ak'),a:+v('aa'),y:+v('ay')||0,where:v('aw').trim()||'Не указано'})}
