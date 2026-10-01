@@ -176,12 +176,25 @@ function handleLibraryInput(input){
   libBusy=false;libErr=e.message||'Ошибка загрузки';render();
  });
 }
-async function downloadLibraryFile(path,name){
+async function openLibraryFile(path,name){
+ const w=window.open('about:blank','_blank');
+ if(!w){alert('Разреши открытие новых вкладок для этого сайта.');return}
  try{
-  const r=await fetch(CFG.url+'/storage/v1/object/authenticated/library/'+path.split('/').map(encodeURIComponent).join('/'),{headers:await storageHeaders()});
-  if(!r.ok)throw new Error('Не удалось скачать файл: '+r.status);
-  const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name||'file';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
- }catch(e){alert(e.message||'Ошибка скачивания')}
+  const r=await fetch(CFG.url+'/storage/v1/object/sign/library/'+path.split('/').map(encodeURIComponent).join('/'),{method:'POST',headers:await storageHeaders({'Content-Type':'application/json'}),body:JSON.stringify({expiresIn:3600})});
+  if(!r.ok){let msg='Не удалось открыть файл: '+r.status;try{const j=await r.json();msg=j.message||j.error||msg}catch{};throw new Error(msg)}
+  const j=await r.json();
+  const raw=String(j.signedURL||j.signedUrl||'');
+  if(!raw)throw new Error('Supabase не вернул ссылку для открытия');
+  const url=raw.startsWith('http')?raw:(raw.startsWith('/storage/v1/')?CFG.url+raw:CFG.url+'/storage/v1'+(raw.startsWith('/')?raw:'/'+raw));
+  const n=String(name||path.split('/').pop()||'file').toLowerCase();
+  const isWord=/\.(doc|docx)$/i.test(n);
+  if(isWord){
+    const viewer='https://view.officeapps.live.com/op/view.aspx?src='+encodeURIComponent(url);
+    w.location.href=viewer;
+  }else{
+    w.location.href=url;
+  }
+ }catch(e){try{w.close()}catch{};alert(e.message||'Ошибка открытия файла')}
 }
 async function deleteLibraryFile(path){
  if(!confirm('Удалить файл из библиотеки?'))return;
@@ -195,8 +208,13 @@ const libSize=n=>{n=Number(n||0);if(n<1024)return n+' Б';if(n<1024*1024)return 
 const libIcon=m=>m&&m.startsWith('image/')?'▧':m==='application/pdf'?'PDF':m&&m.includes('word')?'DOC':m&&m.includes('sheet')?'XLS':'FILE';
 function libraryView(){
  if(!AU)return `<h1>Библиотека</h1><div class="g p mut">Войди в аккаунт, чтобы хранить материалы в облаке.</div>`;
- const rows=libFiles.map(x=>{const path=AU.uid+'/'+x.name,size=x.metadata?.size||0,mime=x.metadata?.mimetype||x.metadata?.contentType||'';return `<div class="r"><span><b>${esc(x.name)}</b><small>${libIcon(mime)} · ${libSize(size)}</small></span><button class="b2" data-a=libDownload data-path="${esc(path)}" data-name="${esc(x.name)}">Скачать</button><button class="x" data-a=libDelete data-path="${esc(path)}">✕</button></div>`}).join('');
- return `<h1>Библиотека</h1><div class="g p"><input id="libraryInput" class="lib-file-input" type="file" hidden multiple onchange="handleLibraryInput(this)"><div class="row"><div style="flex:1"><b>Мои материалы</b><p class="mut">Файлы хранятся в Supabase и доступны после входа на любом устройстве.</p></div><label class="lib-upload" for="libraryInput">＋ Загрузить</label></div>${libBusy?'<p class="mut" style="margin-top:10px">Загрузка…</p>':''}${libErr?`<p class="neg" style="margin-top:10px">${esc(libErr)}</p>`:''}</div>${rows?`<div class="g">${rows}</div>`:'<div class="g p mut">Библиотека пока пустая. Нажми «Загрузить» и выбери файл.</div>'}`;
+ const rows=libFiles.map(x=>{
+  const path=AU.uid+'/'+x.name;
+  const size=x.metadata?.size||0;
+  const mime=x.metadata?.mimetype||x.metadata?.contentType||'';
+  return `<div class="r"><span><b>${esc(x.name)}</b><small>${libIcon(mime)} · ${libSize(size)}</small></span><button class="b2" data-a=libOpen data-path="${esc(path)}" data-name="${esc(x.name)}">Открыть</button><button class="x" data-a=libDelete data-path="${esc(path)}">✕</button></div>`
+ }).join('');
+ return `<h1>Библиотека</h1><div class="g p"><input id="libraryInput" class="lib-file-input" type="file" hidden multiple onchange="handleLibraryInput(this)"><div class="row"><div style="flex:1"><b>Мои материалы</b><p class="mut">Файлы хранятся в Supabase и доступны после входа на любом устройстве. Word открывается через Word Online, PDF и HTML — прямо в новой вкладке.</p></div><label class="lib-upload" for="libraryInput">＋ Загрузить</label></div>${libBusy?'<p class="mut" style="margin-top:10px">Загрузка…</p>':''}${libErr?`<p class="neg" style="margin-top:10px">${esc(libErr)}</p>`:''}</div>${rows?`<div class="g">${rows}</div>`:'<div class="g p mut">Библиотека пока пустая. Нажми «Загрузить» и выбери файл.</div>'}`;
 }
 
 // ---------- экраны ----------
@@ -435,6 +453,8 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b
  if(a=='login'||a=='signup'){auth(a);return}
  if(a=='syncnow'){pull();return}
  if(a=='report'){generateReport();return}
+ if(a=='libOpen'){openLibraryFile(b.dataset.path,b.dataset.name);return}
+ if(a=='libDelete'){deleteLibraryFile(b.dataset.path);return}
  if(a=='logout'){if(confirm('Выйти? Данные останутся в облаке, а на этом устройстве будут удалены.')){AU=null;localStorage.removeItem('lt.auth');localStorage.removeItem(K);localStorage.removeItem('lt.sync');S=JSON.parse(JSON.stringify(DEF));sync={st:'out',t:0,msg:'',remoteUpdatedAt:null,baseUpdatedAt:null,dirty:false};loginUI();render()}return}
  if(a=='col'){col[b.dataset.k]=!col[b.dataset.k];b.classList.toggle('shut');b.nextElementSibling.classList.toggle('shut');return}
  if(a=='tab'){tab=b.dataset.k;location.hash=tab;scrollTo(0,0);if(tab==='l')loadLibrary()}
