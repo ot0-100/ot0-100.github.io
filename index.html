@@ -81,13 +81,15 @@ table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;p
 const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 const pd=s=>new Date(s+'T00:00'),addD=(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);
 const TD=pd(iso(new Date())),D=iso(TD),START=pd('2026-10-01'),END=pd('2027-06-01'),GOAL=pd('2027-06-20');
-let S={l2:null,done:{},apps:{},notes:{},co:[],debts:[],extra:0,method:'av',assets:[],led:[],hired:false,usdRate:83.5588,moneyCurrency:'RUB',userTasks:{},passives:{}};
+let S={l2:null,done:{},apps:{},notes:{},co:[],debts:[],extra:0,method:'av',assets:[],led:[],hired:false,usdRate:83.5588,moneyCurrency:'RUB',userTasks:{},passives:{},skipped:{},taskMoves:[]};
 const DEF=JSON.parse(JSON.stringify(S));
 try{Object.assign(S,JSON.parse(localStorage.getItem(K)||'{}'))}catch(e){}
 S.usdRate=Number(S.usdRate)>0?Number(S.usdRate):83.5588;
 S.moneyCurrency=S.moneyCurrency==='USD'?'USD':'RUB';
 S.userTasks=(S.userTasks&&typeof S.userTasks==='object')?S.userTasks:{};
 S.passives=(S.passives&&typeof S.passives==='object')?S.passives:{};
+S.skipped=(S.skipped&&typeof S.skipped==='object')?S.skipped:{};
+S.taskMoves=Array.isArray(S.taskMoves)?S.taskMoves:[];
 
 // ---------- финансовая модель / миграция ----------
 const normFinance=()=>{
@@ -152,7 +154,7 @@ const fdet=(d,k)=>{const w=fw(d),l=Math.min(3,Math.floor(w/8));return PL[(d.getD
 const planned=()=>addD(START,35),P2e=()=>S.l2?pd(S.l2):planned();
 const ph=d=>S.l2?(d>=pd(S.l2)?1:0):(planned()>TD&&d>=planned()?1:0);
 const grade=d=>{const t=Math.max(6,Math.floor(days(END,P2e())/7)),w=Math.max(0,Math.floor(days(d,P2e())/7));return 6+Math.min(5,Math.floor(w/(t/6)))};
-function tasks(d){
+function generatedTasks(d){
  if(d<START||d>END)return[];
  const wd=(d.getDay()+6)%7,p=ph(d),T=[];
  if(wd==6)T.push({id:'s-rev',a:'s',x:'Повторение недели',d:p?'Перечитать конспекты, разобрать ошибки недели':'Повторить пройденное по Челпанову, ответить на вопросы в конце глав',h:1});
@@ -165,11 +167,26 @@ function tasks(d){
   else T.push(wd==5?{id:'w-cv',a:'w',x:'Обновить резюме и сопроводительное письмо',h:.5}:{id:'w-sum',a:'w',x:'Итоги недели по откликам и компаниям',d:'Внести ответы в таблицу компаний',h:.25})}
  T.push({id:'m-led',a:'m',x:'Внести доходы и расходы за день',h:.1},
   {id:'f-am',a:'f',x:'Утро: '+PL[wd][0],d:fdet(d,1),h:.4},{id:'f-pm',a:'f',x:'Вечер, тихо: без скакалки',d:fdet(d,2),h:.4});
- const own=Array.isArray(S.userTasks[iso(d)])?S.userTasks[iso(d)]:[];
- if(own.length)T.push(...own);
  return T}
-const doneOn=(s,t)=>!!(S.done[s]&&S.done[s][t.id]),isDone=t=>doneOn(D,t);
-const chk=(t,s=D,ro)=>{const o=doneOn(s,t);return`<label class="r c${o?' on':''}"><input type=checkbox data-c=tgl data-k="${t.id}" data-d="${s}" ${o?'checked':''} ${ro?'disabled':''}><span><b>${t.x}</b>${t.d?'<small>'+t.d+'</small>':''}</span><em>${t.h} ч</em></label>`};
+const tasks=d=>{
+ const ds=iso(d),moves=Array.isArray(S.taskMoves)?S.taskMoves:[],T=[];
+ if(d>=START&&d<=END){
+   const movedOut=new Set(moves.filter(m=>m.from===ds).map(m=>m.id));
+   T.push(...generatedTasks(d).filter(t=>!movedOut.has(t.id)));
+ }
+ moves.filter(m=>m.to===ds).forEach(m=>{
+   const base=generatedTasks(pd(m.from)).find(t=>t.id===m.id);
+   if(base)T.push({...base,id:'mv-'+m.from+'-'+m.id,moveFrom:m.from,moveId:m.id});
+ });
+ const own=Array.isArray(S.userTasks[ds])?S.userTasks[ds]:[];
+ if(own.length)T.push(...own);
+ return T;
+};
+const doneOn=(s,t)=>!!(S.done[s]&&S.done[s][t.id]),skipOn=(s,t)=>!!(S.skipped[s]&&S.skipped[s][t.id]),isDone=t=>doneOn(D,t);
+const chk=(t,s=D,ro)=>{
+ const o=doneOn(s,t),sk=skipOn(s,t),canMove=!ro&&t.a!=='f',canSkip=!ro&&t.a==='f';
+ return`<div class="r c${o?' on':''}${sk?' skipped':''}"><input type=checkbox data-c=tgl data-k="${t.id}" data-d="${s}" ${o?'checked':''} ${sk?'disabled':''} ${ro?'disabled':''}><span><b>${t.x}</b>${t.d?'<small>'+t.d+'</small>':''}${sk?'<small class="neg">Мало времени — не успел</small>':''}</span><em>${t.h} ч</em>${canMove?`<button class="task-move" data-a=moveTask data-d="${s}" data-id="${t.id}" data-from="${t.moveFrom||s}" data-mid="${t.moveId||t.id}" title="Перенести на другую дату">↗</button>`:''}${canSkip?`<button class="task-skip" data-a=skipTask data-d="${s}" data-id="${t.id}" title="Не успел">${sk?'↺':'✕'}</button>`:''}</div>`;
+};
 const areaTasks=a=>tasks(TD).filter(t=>t.a==a);
 const grp=(T,s,ro)=>`<div class="g">${T.map(t=>chk(t,s,ro)).join('')}</div>`;
 
@@ -490,6 +507,32 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b
  else if(a=='fin'){S.l2=iso(addD(TD,1))}
  else if(a=='ap')S.apps[D]=Math.max(0,(S.apps[D]||0)+ +b.dataset.n);
  else if(a=='toggleOwnAdd'){ownAdd=!ownAdd;col.u=false;render();return}
+ else if(a=='moveTask'){
+   const shown=b.dataset.id,sourceDate=b.dataset.d,from=b.dataset.from||sourceDate,mid=b.dataset.mid||shown;
+   const to=prompt('Перенести задачу на дату (ГГГГ-ММ-ДД):',sourceDate);
+   if(!to||!/^(\d{4})-(\d{2})-(\d{2})$/.test(to))return;
+   const dt=pd(to);
+   if(Number.isNaN(dt.getTime()))return alert('Неверная дата.');
+   if(to===sourceDate)return alert('Выбери другую дату.');
+   const own=(S.userTasks[sourceDate]||[]).find(x=>x.id===shown);
+   if(own){
+     S.userTasks[sourceDate]=S.userTasks[sourceDate].filter(x=>x.id!==shown);
+     S.userTasks[to]=Array.isArray(S.userTasks[to])?S.userTasks[to]:[];
+     S.userTasks[to].push(own);
+     if(S.done[sourceDate])delete S.done[sourceDate][shown];
+     if(S.skipped[sourceDate])delete S.skipped[sourceDate][shown];
+   }else{
+     if(S.done[sourceDate])delete S.done[sourceDate][shown];
+     if(S.skipped[sourceDate])delete S.skipped[sourceDate][shown];
+     S.taskMoves=Array.isArray(S.taskMoves)?S.taskMoves.filter(m=>!(m.from===from&&m.id===mid)):[];
+     S.taskMoves.push({from,id:mid,to});
+   }
+   save();render();return;
+ }
+ else if(a=='skipTask'){
+   const d=b.dataset.d,id=b.dataset.id;S.skipped[d]=S.skipped[d]||{};S.skipped[d][id]=!S.skipped[d][id];
+   save();render();return;
+ }
  else if(a=='addUserTask'){const x=v('utx').trim(),h=+v('uth')||0;if(!x||h<=0)return;S.userTasks[D]=Array.isArray(S.userTasks[D])?S.userTasks[D]:[];S.userTasks[D].push({id:'u-'+Date.now().toString(36),a:'u',x,h});ownAdd=false}
  else if(a=='addco'){if(!v('cn').trim())return;S.co.unshift({n:v('cn'),s:v('cs'),d:v('cd'),sal:v('csal'),bon:v('cbon'),con:v('ccon'),cm:v('ccm')})}
  else if(a=='delco')S.co.splice(i,1);
@@ -503,7 +546,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b
  else if(a=='delled')S.led.splice(i,1);
  save();render(a=='tab')});
 document.addEventListener('change',e=>{const t=e.target;if(t.id==='libraryInput'){const f=t.files?.[0];if(f)uploadLibraryFile(f);t.value='';return}const c=t.dataset.c;if(!c||c=='note')return;
- if(c=='tgl'){const s=t.dataset.d;S.done[s]=S.done[s]||{};S.done[s][t.dataset.k]=t.checked}
+ if(c=='tgl'){const s=t.dataset.d,id=t.dataset.k;if(S.skipped[s]&&S.skipped[s][id])return;S.done[s]=S.done[s]||{};S.done[s][id]=t.checked}
  else if(c=='stage')S.co[+t.dataset.i].s=t.value;
  else if(c=='debt')S.debts[+t.dataset.i].b=+t.value||0;
  else if(c=='debtWhere')S.debts[+t.dataset.i].where=t.value.trim()||'Не указано';
