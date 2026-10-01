@@ -61,6 +61,8 @@ h1{font-size:32px;letter-spacing:-.02em;margin:6px 0 18px;line-height:1.15}h3{fo
 input,select,textarea{font:inherit;color:var(--ink);background:var(--el2);border:0;border-radius:10px;padding:9px 11px;min-width:0;width:100%}
 textarea{min-height:200px;resize:vertical;margin-top:8px}
 button.b,button.b2{flex:none;border:0;border-radius:10px;padding:9px 16px;font-weight:600;font-size:14px;font-family:inherit;cursor:pointer;background:var(--acc);color:var(--on,#fff)}
+.lib-upload{display:inline-flex;align-items:center;justify-content:center;flex:none;border:0;border-radius:10px;padding:9px 16px;font-weight:600;font-size:14px;font-family:inherit;cursor:pointer;background:var(--acc);color:var(--on,#fff);transition:transform .25s cubic-bezier(.3,1.5,.5,1),opacity .2s,background .2s}.lib-upload:active{transform:scale(.95)}
+.lib-file-input{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;opacity:0}
 button.b2{background:var(--el2);color:var(--acc)}button:disabled{opacity:.4;cursor:default}
 .currency{display:inline-flex;gap:3px;padding:3px;background:var(--el2);border-radius:10px;flex:none}.currency button{border:0;background:transparent;color:var(--mut);border-radius:8px;padding:6px 12px;font:600 13px/1 inherit;cursor:pointer}.currency button.on{background:var(--el);color:var(--ink);box-shadow:0 1px 5px #0002}
 button.x{background:none;border:0;color:var(--mut);cursor:pointer;font-size:16px;flex:none}
@@ -258,7 +260,7 @@ const libIcon=m=>m&&m.startsWith('image/')?'▧':m==='application/pdf'?'PDF':m&&
 function libraryView(){
  if(!AU)return `<h1>Библиотека</h1><div class="g p mut">Войди в аккаунт, чтобы хранить материалы в облаке.</div>`;
  const rows=libFiles.map(x=>{const path=AU.uid+'/'+x.name,size=x.metadata?.size||0,mime=x.metadata?.mimetype||x.metadata?.contentType||'';return `<div class="r"><span><b>${esc(x.name)}</b><small>${libIcon(mime)} · ${libSize(size)}</small></span><button class="b2" data-a=libDownload data-path="${esc(path)}" data-name="${esc(x.name)}">Скачать</button><button class="x" data-a=libDelete data-path="${esc(path)}">✕</button></div>`}).join('');
- return `<h1>Библиотека</h1><div class="g p"><input id="libraryInput" type="file" hidden><div class="row"><div style="flex:1"><b>Мои материалы</b><p class="mut">Файлы хранятся в Supabase и доступны после входа на любом устройстве.</p></div><button class="b" data-a=chooseLibrary>＋ Загрузить</button></div>${libBusy?'<p class="mut" style="margin-top:10px">Загрузка…</p>':''}${libErr?`<p class="neg" style="margin-top:10px">${esc(libErr)}</p>`:''}</div>${rows?`<div class="g">${rows}</div>`:'<div class="g p mut">Библиотека пока пустая. Нажми «Загрузить» и выбери файл.</div>'}`;
+ return `<h1>Библиотека</h1><div class="g p"><input id="libraryInput" class="lib-file-input" type="file" multiple><div class="row"><div style="flex:1"><b>Мои материалы</b><p class="mut">Файлы хранятся в Supabase и доступны после входа на любом устройстве.</p></div><label class="lib-upload" for="libraryInput">＋ Загрузить</label></div>${libBusy?'<p class="mut" style="margin-top:10px">Загрузка…</p>':''}${libErr?`<p class="neg" style="margin-top:10px">${esc(libErr)}</p>`:''}</div>${rows?`<div class="g">${rows}</div>`:'<div class="g p mut">Библиотека пока пустая. Нажми «Загрузить» и выбери файл.</div>'}`;
 }
 
 // ---------- экраны ----------
