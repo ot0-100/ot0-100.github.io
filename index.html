@@ -56,7 +56,7 @@ h1{font-size:32px;letter-spacing:-.02em;margin:6px 0 18px;line-height:1.15}h3{fo
 .r{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-top:.5px solid var(--line)}.r:first-child{border:0}
 .r span{flex:1}.r small{display:block;color:var(--mut)}.r em{font-style:normal;color:var(--mut);font-size:13px;white-space:nowrap}
 .c{cursor:pointer}.c.on b{color:var(--mut);text-decoration:line-through}
-.mut{color:var(--mut);font-size:13px}.big{font-size:40px;font-weight:700;letter-spacing:-.02em;line-height:1.1}.money-mini{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.06)}.money-mini>div{min-width:0}.money-mini span,.money-mini small{display:block;color:var(--mut);font-size:12px}.money-mini b{display:block;margin-top:3px;font-size:16px}.money-mini small{margin-top:2px}@media(max-width:620px){.money-mini{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.mut{color:var(--mut);font-size:13px}.big{font-size:40px;font-weight:700;letter-spacing:-.02em;line-height:1.1}.money-mini{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.06)}.money-mini>div{min-width:0}.money-mini span,.money-mini small{display:block;color:var(--mut);font-size:12px}.money-mini b{display:block;margin-top:3px;font-size:16px}.money-mini small{margin-top:2px}.finance-stack{display:grid;gap:8px;margin-top:12px}.finance-stack-card{padding:11px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.08)}.finance-stack-card b{display:block;font-size:18px;margin-top:2px}.finance-stack-card span{display:block;font-size:12px;margin-top:4px}.asset-box{background:rgba(34,197,94,.07);border-color:rgba(34,197,94,.28)}.asset-box b,.asset-box span{color:var(--ok)}.debt-box{background:rgba(239,68,68,.07);border-color:rgba(239,68,68,.28)}.debt-box b,.debt-box span{color:var(--bad)}@media(max-width:620px){.money-mini{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{flex:1 1 130px}.row>.n{flex:none}
 input,select,textarea{font:inherit;color:var(--ink);background:var(--el2);border:0;border-radius:10px;padding:9px 11px;min-width:0;width:100%}
 textarea{min-height:200px;resize:vertical;margin-top:8px}
@@ -109,10 +109,14 @@ const debtsTotal=()=>S.debts.reduce((a,x)=>a+Number(x.b||0),0);
 const netWorth=()=>balance()+assetsTotal()-debtsTotal();
 const monthlyAssetIncome=()=>S.assets.reduce((a,x)=>a+Number(x.a||0)*Number(x.y||0)/1200,0);
 const monthlyDebtInterest=()=>S.debts.reduce((a,x)=>a+Number(x.b||0)*Number(x.r||0)/1200,0);
+const weightedAssetYield=()=>{const total=assetsTotal();return total?S.assets.reduce((a,x)=>a+Number(x.a||0)*Number(x.y||0),0)/total:0};
+const weightedDebtRate=()=>{const total=debtsTotal();return total?S.debts.reduce((a,x)=>a+Number(x.b||0)*Number(x.r||0),0)/total:0};
 const curBtn=()=>`<div class="currency"><button class="${S.moneyCurrency==='RUB'?'on':''}" data-a=currency data-k=RUB>₽</button><button class="${S.moneyCurrency==='USD'?'on':''}" data-a=currency data-k=USD>$</button></div>`;
 const rateText=()=>`1 $ = ${S.usdRate.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:4})} ₽`;
 const passiveList=()=>Object.entries(S.passives||{}).map(([id,x])=>({id,...x})).filter(x=>x&&String(x.n||'').trim()&&Number(x.a||0)>0);
 const passiveTotal=()=>passiveList().reduce((a,x)=>a+Number(x.a||0),0);
+const debtPaymentTotal=()=>S.debts.reduce((a,x)=>a+Math.max(0,Number(x.p||0)),0);
+const freeFunds=()=>balance()-passiveTotal()-debtPaymentTotal();
 const passiveWhereTotal=(where)=>passiveList().filter(x=>(x.where||'Не указано')===where).reduce((a,x)=>a+Number(x.a||0),0);
 
 const v=id=>document.getElementById(id).value;
@@ -195,16 +199,17 @@ const mdate=n=>{const t=new Date(TD);t.setMonth(t.getMonth()+n);return t.toLocal
 function home0(){
  const T=tasks(TD),c=T.filter(isDone).length,nx=T.find(t=>!isDone(t)),wd=(TD.getDay()+6)%7,hr=new Date().getHours(),p=ph(TD);
  const gr=hr<5?'Доброй ночи':hr<12?'Доброе утро':hr<18?'Добрый день':'Добрый вечер',sh=areaTasks('s').reduce((a,t)=>a+t.h,0),ap=S.apps[D]||0,sm=sim(),dn=days(GOAL,TD);
- const cash=balance(),assets=assetsTotal(),passives=passiveTotal(),debts=debtsTotal(),nw=netWorth(),yieldM=monthlyAssetIncome();
+ const cash=balance(),assets=assetsTotal(),passives=passiveTotal(),debts=debtsTotal(),debtPay=debtPaymentTotal(),nw=netWorth(),yieldM=monthlyAssetIncome();
  const L=[`Сегодня ${WD[wd]}, день ${idx(TD)+1} плана.`,p?'Идёт основной этап: все предметы параллельно.':`Этап 1: Челпанов. Тема недели: ${LOG[Math.min(4,fw(TD))].toLowerCase()}. Остальные предметы откроются после него.`,
   `Учёба сегодня: ${sh} ч. ${S.hired?'Работа найдена.':wd<5?'Откликов отправлено: '+ap+' из 5.':'Работа: разбор недели и резюме.'}`];
  if(sm)L.push(sm.ok?`Долги закроются через ${sm.m} мес. (${mdate(sm.m)}).`:'Платежей по долгам не хватает даже на проценты.');
  if(hr>=18&&!S.led.some(x=>x.d==D))L.push('Доходы и расходы за сегодня ещё не внесены.');
  if(!T.length)L.length=1,L.push('План на эту дату не составлен.');
  return`<div class="hd"><img src="${document.querySelector('link[rel=icon]').href}" width="46" height="46" alt=""><h1>${gr}</h1></div>
- <div class="g p"><div class="row"><div><div class="mut">Чистый капитал</div><div class="big">${mf(nw)}</div><div class="mut">Деньги + активы − пассивы</div></div>${curBtn()}</div>
- <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px"><div><div class="mut">Деньги</div><b>${mf(cash)}</b></div><div><div class="mut">Активы</div><b>${mf(assets)}</b></div><div><div class="mut">Пассивы / мес.</div><b>${mf(passives)}</b></div><div><div class="mut">Долги</div><b>${mf(debts)}</b></div><div><div class="mut">Доход активов / мес.</div><b>${mf(yieldM)}</b></div></div>
- <p class="mut" style="margin-top:10px">${rateText()} · активы, регулярные расходы и долги — в разделе «Деньги». Прогноз учитывает только текущие активы, долги и регулярные расходы.</p><div class="row" style="margin-top:10px"><button class="b" data-a=report>Сформировать отчёт Excel</button><button class="b2" data-a=tab data-k=u>Мои задачи</button></div></div>
+ <div class="g p"><div class="row"><div><div class="mut">Свободные средства</div><div class="big">${mf(freeFunds())}</div><div class="mut">Деньги − обязательные расходы − платежи по долгам</div></div>${curBtn()}</div>
+ <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px"><div><div class="mut">Деньги</div><b>${mf(cash)}</b></div><div><div class="mut">Расходы / мес.</div><b>${mf(passives)}</b></div><div><div class="mut">Платежи по долгам / мес.</div><b>${mf(debtPay)}</b></div><div><div class="mut">Долги</div><b>${mf(debts)}</b></div></div>
+ <div class="finance-stack"><div class="finance-stack-card asset-box"><div class="mut">Активы</div><b>${mf(assets)}</b><span>+${mf(yieldM)} / мес. · ${weightedAssetYield().toLocaleString('ru-RU',{maximumFractionDigits:1})}% годовых</span></div><div class="finance-stack-card debt-box"><div class="mut">Долг</div><b>${mf(debts)}</b><span>+${mf(monthlyDebtInterest())} процентов / мес. · ${weightedDebtRate().toLocaleString('ru-RU',{maximumFractionDigits:1})}% годовых · платёж ${mf(debtPay)}/мес.</span></div></div>
+ <p class="mut" style="margin-top:10px">${rateText()} · активы не считаются деньгами для трат: они растут отдельно. Прогноз учитывает активы, регулярные расходы и долги.</p><div class="row" style="margin-top:10px"><button class="b" data-a=report>Сформировать отчёт Excel</button><button class="b2" data-a=tab data-k=u>Мои задачи</button></div></div>
  <div class="g p">${L.map(x=>'<p>'+x+'</p>').join('')}${nx?`<p style="margin-top:10px"><b>Следующий шаг:</b> ${nx.x}</p>`:''}<div class="bar${c==T.length&&T.length?' full':''}"><i data-w="${T.length?100*c/T.length:0}"></i></div><p class="mut">Выполнено ${c} из ${T.length}</p></div>
  <div class="g p row"><div><div class="big" data-n="${Math.max(0,dn)}">${Math.max(0,dn)}</div><div class="mut">дней до начала приёма (${fd('2027-06-20')})</div></div><div class="mut">Цель: поступление в НИУ ВШЭ Пермь на базе СПО. План идёт до 1 июня 2027.</div></div>
  ${['s','w','m','f'].map(a=>{const t=areaTasks(a);return t.length?`<div class="gh fh${col[a]?' shut':''}" data-a=col data-k=${a}>${AN[a]}<span>${t.filter(isDone).length}/${t.length}</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div><div class="fold${col[a]?' shut':''}"><div>${grp(t)}</div></div>`:''}).join('')}
@@ -267,7 +272,7 @@ function financeForecast(){
      const pay=Math.min(x.b,x.p);
      x.b-=pay;
    });
-   cash-=pass;
+   cash-=pass+debts.reduce((a,x)=>a+Math.min(Math.max(0,x.p),Math.max(0,x.b)),0);
    const projectedAssets=assets.reduce((a,x)=>a+x.a,0);
    const projectedDebts=debts.reduce((a,x)=>a+x.b,0);
    const capital=cash+projectedAssets-projectedDebts;
@@ -283,7 +288,7 @@ const monthlyCapitalDelta=()=>{const f=financeForecast();return f.out[0]?.delta|
 const monthlyCapitalPct=()=>{const f=financeForecast();return f.out[0]?.pct||0};
 
 function money(){
- const sm=sim(),cash=balance(),cap=assetsTotal(),liab=debtsTotal(),passives=passiveTotal(),nw=netWorth(),inc=monthlyAssetIncome(),interest=monthlyDebtInterest(),fc=financeForecast();
+ const sm=sim(),cash=balance(),cap=assetsTotal(),liab=debtsTotal(),passives=passiveTotal(),debtPay=debtPaymentTotal(),nw=netWorth(),inc=monthlyAssetIncome(),interest=monthlyDebtInterest(),fc=financeForecast();
  const dr=S.debts.map((x,i)=>`<tr><td><b>${esc(x.n)}</b><small><input type=text data-c=debtWhere data-i=${i} value="${esc(x.where||'Не указано')}" placeholder="У кого / где"></small></td><td><input type=number data-c=debt data-i=${i} value="${x.b}" style="width:110px"></td><td>${x.r}%</td><td>${mf(x.p)}</td><td>${sm&&sm.d.find(q=>q.n==x.n&&q.m)?sm.d.find(q=>q.n==x.n).m+' мес.':''}</td><td><button class=x data-a=deldebt data-i=${i}>✕</button></td></tr>`).join('');
  const pr=passiveList().map(x=>`<tr><td><b>${esc(x.n)}</b></td><td>${esc(x.k||'Другое')}</td><td>${mf(x.a)}</td><td>${esc(x.where||'Не указано')}</td><td><button class=x data-a=delpassive data-id=${esc(x.id)}>✕</button></td></tr>`).join('');
  const mo={};S.led.forEach(x=>{const k=x.d.slice(0,7);mo[k]=mo[k]||{i:0,e:0};mo[k][x.t=='Доход'?'i':'e']+=+x.a});
@@ -296,8 +301,9 @@ function money(){
  const debtPlaceRows=Object.entries(debtPlaces).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="r"><span><b>${esc(k)}</b><small>${S.debts.filter(x=>(x.where||'Не указано')==k).length} обязательств</small></span><em>${mf(v)}</em></div>`).join('');
  const forecastRows=fc.out.map(x=>`<tr><td>${x.label}</td><td>${mf(x.cash)}</td><td>${mf(x.assets)}</td><td>${mf(x.passives)}</td><td>${mf(x.debts)}</td><td>${mf(x.capital)}</td><td class="${x.delta>=0?'pos':'neg'}"><b>${x.delta>=0?'+':''}${mf(x.delta)}</b></td><td class="${x.pct>=0?'pos':'neg'}"><b>${x.pct>=0?'+':''}${x.pct.toLocaleString('ru-RU',{maximumFractionDigits:1})}%</b></td></tr>`).join('');
  return`<h1>Деньги</h1>
- <div class="g p"><div class="row"><div><div class="mut">Чистый капитал</div><div class="big">${mf(nw)}</div><div class="mut">Деньги + активы − долги</div></div>${curBtn()}</div>
- <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px"><div><div class="mut">Деньги</div><b>${mf(cash)}</b></div><div><div class="mut">Активы</div><b>${mf(cap)}</b></div><div><div class="mut">Пассивы / мес.</div><b>${mf(passives)}</b></div><div><div class="mut">Долги</div><b>${mf(liab)}</b></div><div><div class="mut">Доход активов / мес.</div><b>${mf(inc)}</b></div><div><div class="mut">Проценты по долгам / мес.</div><b>${mf(interest)}</b></div></div>
+ <div class="g p"><div class="row"><div><div class="mut">Свободные средства</div><div class="big">${mf(freeFunds())}</div><div class="mut">Деньги − обязательные расходы − платежи по долгам</div></div>${curBtn()}</div>
+ <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px"><div><div class="mut">Деньги</div><b>${mf(cash)}</b></div><div><div class="mut">Расходы / мес.</div><b>${mf(passives)}</b></div><div><div class="mut">Платежи по долгам / мес.</div><b>${mf(debtPay)}</b></div><div><div class="mut">Чистая позиция</div><b>${mf(nw)}</b></div></div>
+ <div class="finance-stack"><div class="finance-stack-card asset-box"><div class="mut">Активы</div><b>${mf(cap)}</b><span>+${mf(inc)} / мес. · ${weightedAssetYield().toLocaleString('ru-RU',{maximumFractionDigits:1})}% годовых</span></div><div class="finance-stack-card debt-box"><div class="mut">Долг</div><b>${mf(liab)}</b><span>+${mf(interest)} процентов / мес. · ${weightedDebtRate().toLocaleString('ru-RU',{maximumFractionDigits:1})}% годовых · платёж ${mf(debtPay)}/мес.</span></div></div>
  <div class="row" style="margin-top:12px"><label style="max-width:260px">Курс USD, ₽<input type=number min=0.01 step=.0001 data-c=usdRate value="${S.usdRate}"></label><span class="mut">${rateText()}. Пассивы — это регулярные расходы; долги считаются отдельно.</span></div></div>
  <div class="gh">Пассивы · регулярные расходы</div><div class="g p"><div class="row"><input id=pn placeholder="Например: Съём жилья"><select id=pk><option>Жильё</option><option>Коммунальные</option><option>Связь</option><option>Подписки</option><option>Транспорт</option><option>Питание</option><option>Другое</option></select><input id=pa type=number min=0.01 placeholder="Сумма в месяц, ₽"><input id=pw placeholder="Где / кому"><button class="b" data-a=addpassive>Добавить</button></div></div>
  ${pr?`<div class="g wrap"><table><tr><th>Расход</th><th>Категория</th><th>В месяц</th><th>Где / кому</th><th></th></tr>${pr}<tr><th>Итого</th><th></th><th>${mf(passives)}</th><th></th><th></th></tr></table></div>`:'<div class="g p mut">Регулярных расходов пока нет. Добавь, например, аренду жилья — она будет учитываться в прогнозе каждого следующего месяца.</div>'}
@@ -306,7 +312,7 @@ function money(){
  ${S.debts.length?`<div class="g p"><b>Где находятся долги</b>${debtPlaceRows}</div>`:''}
  <div class="gh">Активы</div><div class="g p"><div class="row"><input id=an placeholder="Название"><select id=ak><option>Вклад</option><option>Акции</option><option>Облигации</option><option>Недвижимость</option><option>Наличные</option><option>Крипто</option><option>Другое</option></select><input id=aa type=number placeholder="Сумма, ₽"><input id=ay type=number step=.1 placeholder="Доходность, % годовых"><input id=aw placeholder="Где / у кого"><button class="b" data-a=addasset>Добавить</button></div></div>
  ${S.assets.length?`<div class="g wrap"><table><tr><th>Актив</th><th>Тип</th><th>Сумма</th><th>Доходность</th><th>Доход / мес.</th><th></th></tr>${ar}<tr><th>Итого</th><th></th><th>${mf(cap)}</th><th></th><th>${mf(inc)}</th><th></th></tr></table></div><div class="g p"><b>Где находятся активы</b>${assetPlaceRows}</div>`:'<div class="g p mut">Добавь активы — они автоматически войдут в расчёт чистого капитала.</div>'}
- <div class="gh">Прогноз на 6 месяцев</div><div class="g wrap"><table><tr><th>Месяц</th><th>Деньги</th><th>Активы</th><th>Пассивы / мес.</th><th>Долги</th><th>Чистый капитал</th><th>Изменение</th><th>%</th></tr>${forecastRows}</table><p class="mut" style="margin:10px 12px 12px">Консервативный прогноз: новых доходов в нём нет. Каждый месяц из денег вычитаются регулярные расходы, активы растут по своей доходности, а долги уменьшаются по процентам и платежам. Поэтому изменение прогноза зависит от твоих текущих активов, пассивов и долгов.</p></div>
+ <div class="gh">Прогноз на 6 месяцев</div><div class="g wrap"><table><tr><th>Месяц</th><th>Деньги</th><th>Активы</th><th>Пассивы / мес.</th><th>Долги</th><th>Чистый капитал</th><th>Изменение</th><th>%</th></tr>${forecastRows}</table><p class="mut" style="margin:10px 12px 12px">Консервативный прогноз: новых доходов в нём нет. Из денег каждый месяц вычитаются регулярные расходы и платежи по долгам; активы растут по своей доходности, долги сначала начисляют проценты, затем уменьшаются на платежи. Вклад, акции и другие активы не считаются доступными для трат.</p></div>
  <div class="gh">Доходы и расходы по месяцам</div><div class="g p"><div class="row"><input id=ld type=date value="${D}"><select id=lt><option>Расход</option><option>Доход</option></select><input id=lc placeholder="Категория"><input id=la type=number placeholder="Сумма, ₽"><button class="b" data-a=addled>Добавить</button></div></div>
  ${mr?`<div class="g wrap"><table><tr><th>Месяц</th><th>Доходы</th><th>Расходы</th><th>Итог</th></tr>${mr}</table></div><div class="gh">Последние операции</div><div class="g wrap"><table>${lr}</table></div>`:'<div class="g p mut">Операций пока нет. Добавь первую операцию выше — баланс появится автоматически.</div>'}`
 }
