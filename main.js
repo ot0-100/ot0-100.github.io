@@ -44,7 +44,7 @@ const v=id=>document.getElementById(id).value;
 const days=(a,b)=>Math.round((a-b)/864e5),idx=d=>Math.max(0,days(d,START));
 const fd=(s,o)=>pd(s).toLocaleDateString('ru-RU',o||{day:'numeric',month:'long'});
 let col={},ti=0,tab=(location.hash||'#h').slice(1),cm=new Date(TD.getFullYear(),TD.getMonth(),1),sel=D,dd=D;
-const TABS={h:'Сегодня',k:'План',s:'Учёба',w:'Работа',m:'Деньги',f:'Спорт',d:'Дневник'};
+const TABS={h:'Сегодня',k:'План',s:'Учёба',w:'Работа',m:'Деньги',f:'Спорт',d:'Дневник',l:'Библиотека'};
 const AN={s:'Учёба',w:'Работа',m:'Финансы',f:'Физподготовка',u:'Мои задачи'};
 
 // ---------- годовой план ----------
@@ -115,6 +115,55 @@ function sim(){
   d.forEach(x=>{if(x.b<=.005&&x.m==null)x.m=m})}
  return{m,int,d,budget,ok:!d.some(x=>x.b>.005)}}
 const mdate=n=>{const t=new Date(TD);t.setMonth(t.getMonth()+n);return t.toLocaleDateString('ru-RU',{month:'long',year:'numeric'})};
+
+// ---------- библиотека ----------
+let libFiles=[],libBusy=false,libErr='';
+const storageHeaders=async(extra={})=>({apikey:CFG.key,Authorization:'Bearer '+await tok(),...(extra||{})});
+const safeFileName=name=>String(name||'file').replace(/[^\p{L}\p{N}._-]+/gu,'_').slice(0,140)||'file';
+const libPath=name=>`${AU.uid}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}-${safeFileName(name)}`;
+async function loadLibrary(){
+ if(!AU||!ON)return;
+ libBusy=true;libErr='';if(tab==='l')render();
+ try{
+  const r=await fetch(CFG.url+'/storage/v1/object/list/library',{method:'POST',headers:{...(await storageHeaders()),'Content-Type':'application/json'},body:JSON.stringify({prefix:AU.uid,limit:100,offset:0,sortBy:{column:'created_at',order:'desc'}})});
+  if(!r.ok)throw new Error('Не удалось загрузить библиотеку: '+r.status);
+  libFiles=(await r.json()).filter(x=>x.id!==null);
+ }catch(e){libErr=e.message||'Ошибка загрузки библиотеки';libFiles=[]}
+ libBusy=false;if(tab==='l')render();
+}
+async function uploadLibraryFile(file){
+ if(!AU)return alert('Сначала войди в аккаунт.');
+ if(file.size>50*1024*1024)return alert('Файл слишком большой. Максимум 50 МБ.');
+ libBusy=true;libErr='';render();
+ const path=libPath(file.name);
+ try{
+  const r=await fetch(CFG.url+'/storage/v1/object/library/'+path.split('/').map(encodeURIComponent).join('/'),{method:'POST',headers:await storageHeaders({'Content-Type':file.type||'application/octet-stream','x-upsert':'false','cache-control':'3600'}),body:file});
+  if(!r.ok){let msg='Ошибка загрузки: '+r.status;try{const j=await r.json();msg=j.message||j.error||msg}catch{}throw new Error(msg)}
+  await loadLibrary();
+ }catch(e){libBusy=false;libErr=e.message||'Ошибка загрузки';render();alert(libErr)}
+}
+async function downloadLibraryFile(path,name){
+ try{
+  const r=await fetch(CFG.url+'/storage/v1/object/authenticated/library/'+path.split('/').map(encodeURIComponent).join('/'),{headers:await storageHeaders()});
+  if(!r.ok)throw new Error('Не удалось скачать файл: '+r.status);
+  const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name||'file';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ }catch(e){alert(e.message||'Ошибка скачивания')}
+}
+async function deleteLibraryFile(path){
+ if(!confirm('Удалить файл из библиотеки?'))return;
+ try{
+  const r=await fetch(CFG.url+'/storage/v1/object/library/'+path.split('/').map(encodeURIComponent).join('/'),{method:'DELETE',headers:await storageHeaders()});
+  if(!r.ok)throw new Error('Не удалось удалить файл: '+r.status);
+  await loadLibrary();
+ }catch(e){alert(e.message||'Ошибка удаления')}
+}
+const libSize=n=>{n=Number(n||0);if(n<1024)return n+' Б';if(n<1024*1024)return (n/1024).toFixed(1)+' КБ';if(n<1024*1024*1024)return (n/1048576).toFixed(1)+' МБ';return (n/1073741824).toFixed(1)+' ГБ'};
+const libIcon=m=>m&&m.startsWith('image/')?'▧':m==='application/pdf'?'PDF':m&&m.includes('word')?'DOC':m&&m.includes('sheet')?'XLS':'FILE';
+function libraryView(){
+ if(!AU)return `<h1>Библиотека</h1><div class="g p mut">Войди в аккаунт, чтобы хранить материалы в облаке.</div>`;
+ const rows=libFiles.map(x=>{const path=AU.uid+'/'+x.name,size=x.metadata?.size||0,mime=x.metadata?.mimetype||x.metadata?.contentType||'';return `<div class="r"><span><b>${esc(x.name)}</b><small>${libIcon(mime)} · ${libSize(size)}</small></span><button class="b2" data-a=libDownload data-path="${esc(path)}" data-name="${esc(x.name)}">Скачать</button><button class="x" data-a=libDelete data-path="${esc(path)}">✕</button></div>`}).join('');
+ return `<h1>Библиотека</h1><div class="g p"><input id="libraryInput" type="file" hidden><div class="row"><div style="flex:1"><b>Мои материалы</b><p class="mut">Файлы хранятся в Supabase и доступны после входа на любом устройстве.</p></div><button class="b" data-a=chooseLibrary>＋ Загрузить</button></div>${libBusy?'<p class="mut" style="margin-top:10px">Загрузка…</p>':''}${libErr?`<p class="neg" style="margin-top:10px">${esc(libErr)}</p>`:''}</div>${rows?`<div class="g">${rows}</div>`:'<div class="g p mut">Библиотека пока пустая. Нажми «Загрузить» и выбери файл.</div>'}`;
+}
 
 // ---------- экраны ----------
 function home0(){
@@ -333,8 +382,8 @@ function generateReport(){
 }
 
 // ---------- рендер и события ----------
-const V={h:home,k:cal,s:study,w:work,m:money,f:fit,d:diary};
-const IC={h:'<path d="M3 11l9-8 9 8M5 9.5V20h14V9.5"/>',k:'<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>',s:'<path d="M12 6c-2-1.5-5-2-8-2v14c3 0 6 .5 8 2 2-1.5 5-2 8-2V4c-3 0-6 .5-8 2zM12 6v14"/>',w:'<rect x="3" y="7" width="18" height="13" rx="3"/><path d="M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2M3 13h18"/>',m:'<circle cx="12" cy="12" r="9"/><path d="M14.5 9.5c-.6-.8-1.6-1.2-2.6-1.2-1.6 0-2.6.8-2.6 1.9s1 1.6 2.7 1.9 2.7.8 2.7 2-1.1 1.9-2.7 1.9c-1.1 0-2.1-.5-2.7-1.3M12 6.5v1.8M12 15.8v1.7"/>',f:'<path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/>',d:'<path d="M5 4h11a2 2 0 012 2v14H7a2 2 0 01-2-2zM9 8h6M9 12h6"/>'};
+const V={h:home,k:cal,s:study,w:work,m:money,f:fit,d:diary,l:libraryView};
+const IC={h:'<path d="M3 11l9-8 9 8M5 9.5V20h14V9.5"/>',k:'<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>',s:'<path d="M12 6c-2-1.5-5-2-8-2v14c3 0 6 .5 8 2 2-1.5 5-2 8-2V4c-3 0-6 .5-8 2zM12 6v14"/>',w:'<rect x="3" y="7" width="18" height="13" rx="3"/><path d="M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2M3 13h18"/>',m:'<circle cx="12" cy="12" r="9"/><path d="M14.5 9.5c-.6-.8-1.6-1.2-2.6-1.2-1.6 0-2.6.8-2.6 1.9s1 1.6 2.7 1.9 2.7.8 2.7 2-1.1 1.9-2.7 1.9c-1.1 0-2.1-.5-2.7-1.3M12 6.5v1.8M12 15.8v1.7"/>',f:'<path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/>',d:'<path d="M5 4h11a2 2 0 012 2v14H7a2 2 0 01-2-2zM9 8h6M9 12h6"/>',l:'<path d="M4 5h6l2 2h8v12H4z"/><path d="M8 14h8M8 17h5"/>'};
 const navEl=document.getElementById('nav');
 navEl.innerHTML='<i class="ind"></i>'+Object.keys(TABS).map(k=>`<button data-a=tab data-k=${k}><svg viewBox="0 0 24 24">${IC[k]}</svg>${TABS[k]}</button>`).join('');
 const ind=()=>{const b=navEl.querySelector('button.on'),i=navEl.querySelector('.ind');if(b){i.style.width=b.offsetWidth+'px';i.style.transform='translateX('+b.offsetLeft+'px)'}};
@@ -354,7 +403,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b
  if(a=='report'){generateReport();return}
  if(a=='logout'){if(confirm('Выйти? Данные останутся в облаке, а на этом устройстве будут удалены.')){AU=null;localStorage.removeItem('lt.auth');localStorage.removeItem(K);localStorage.removeItem('lt.sync');S=JSON.parse(JSON.stringify(DEF));sync={st:'out',t:0,msg:'',remoteUpdatedAt:null,baseUpdatedAt:null,dirty:false};loginUI();render()}return}
  if(a=='col'){col[b.dataset.k]=!col[b.dataset.k];b.classList.toggle('shut');b.nextElementSibling.classList.toggle('shut');return}
- if(a=='tab'){tab=b.dataset.k;location.hash=tab;scrollTo(0,0)}
+ if(a=='tab'){tab=b.dataset.k;location.hash=tab;scrollTo(0,0);if(tab==='l')loadLibrary()}
  else if(a=='currency'){S.moneyCurrency=b.dataset.k=='USD'?'USD':'RUB';save()}
  else if(a=='sel')sel=b.dataset.k;
  else if(a=='cmo')cm=new Date(cm.getFullYear(),cm.getMonth()+ +b.dataset.n,1);
@@ -374,7 +423,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b
  else if(a=='addled'){if(!(+v('la')>0)||!v('ld'))return;S.led.push({d:v('ld'),t:v('lt'),c:v('lc')||'Без категории',a:+v('la')})}
  else if(a=='delled')S.led.splice(i,1);
  save();render(a=='tab')});
-document.addEventListener('change',e=>{const t=e.target,c=t.dataset.c;if(!c||c=='note')return;
+document.addEventListener('change',e=>{const t=e.target;if(t.id==='libraryInput'){const f=t.files?.[0];if(f)uploadLibraryFile(f);t.value='';return}const c=t.dataset.c;if(!c||c=='note')return;
  if(c=='tgl'){const s=t.dataset.d;S.done[s]=S.done[s]||{};S.done[s][t.dataset.k]=t.checked}
  else if(c=='stage')S.co[+t.dataset.i].s=t.value;
  else if(c=='debt')S.debts[+t.dataset.i].b=+t.value||0;
@@ -471,4 +520,4 @@ window.addEventListener('pageshow',()=>{if(AU&&!document.hidden)pull()});
 setInterval(()=>{if(AU&&!document.hidden&&!sync.dirty)pull()},60000);
 
 render(true);requestAnimationFrame(()=>navEl.classList.add('rdy'));addEventListener('resize',ind);
-if(ON){if(AU)pull();else loginUI()}
+if(ON){if(AU){pull();if(tab==='l')loadLibrary()}else loginUI()}
