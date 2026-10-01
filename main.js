@@ -176,25 +176,58 @@ function handleLibraryInput(input){
   libBusy=false;libErr=e.message||'Ошибка загрузки';render();
  });
 }
+async function makeLibrarySignedUrl(path){
+ const r=await fetch(CFG.url+'/storage/v1/object/sign/library/'+path.split('/').map(encodeURIComponent).join('/'),{
+  method:'POST',
+  headers:await storageHeaders({'Content-Type':'application/json'}),
+  body:JSON.stringify({expiresIn:3600})
+ });
+ if(!r.ok){let msg='Не удалось получить ссылку: '+r.status;try{const j=await r.json();msg=j.message||j.error||msg}catch{};throw new Error(msg)}
+ const j=await r.json();
+ const raw=String(j.signedURL||j.signedUrl||j.signedURLPath||'');
+ if(!raw)throw new Error('Supabase не вернул ссылку для открытия');
+ return raw.startsWith('http')?raw:(raw.startsWith('/storage/v1/')?CFG.url+raw:CFG.url+'/storage/v1'+(raw.startsWith('/')?raw:'/'+raw));
+}
 async function openLibraryFile(path,name){
- const w=window.open('about:blank','_blank');
- if(!w){alert('Разреши открытие новых вкладок для этого сайта.');return}
+ const win=window.open('about:blank','_blank');
+ if(!win){alert('Разреши открытие новых вкладок для этого сайта.');return}
  try{
-  const r=await fetch(CFG.url+'/storage/v1/object/sign/library/'+path.split('/').map(encodeURIComponent).join('/'),{method:'POST',headers:await storageHeaders({'Content-Type':'application/json'}),body:JSON.stringify({expiresIn:3600})});
-  if(!r.ok){let msg='Не удалось открыть файл: '+r.status;try{const j=await r.json();msg=j.message||j.error||msg}catch{};throw new Error(msg)}
-  const j=await r.json();
-  const raw=String(j.signedURL||j.signedUrl||'');
-  if(!raw)throw new Error('Supabase не вернул ссылку для открытия');
-  const url=raw.startsWith('http')?raw:(raw.startsWith('/storage/v1/')?CFG.url+raw:CFG.url+'/storage/v1'+(raw.startsWith('/')?raw:'/'+raw));
-  const n=String(name||path.split('/').pop()||'file').toLowerCase();
-  const isWord=/\.(doc|docx)$/i.test(n);
-  if(isWord){
-    const viewer='https://view.officeapps.live.com/op/view.aspx?src='+encodeURIComponent(url);
-    w.location.href=viewer;
-  }else{
-    w.location.href=url;
+  const n=String(name||path.split('/').pop()||'file');
+  const ext=(n.split('.').pop()||'').toLowerCase();
+
+  // HTML/PDF: получаем байты с авторизацией и открываем blob.
+  // Это обходит Content-Disposition: attachment / неверный MIME в Storage.
+  if(ext==='html' || ext==='htm' || ext==='pdf'){
+   const mime=ext==='pdf'?'application/pdf':'text/html;charset=utf-8';
+   const r=await fetch(CFG.url+'/storage/v1/object/authenticated/library/'+path.split('/').map(encodeURIComponent).join('/'),{
+    headers:await storageHeaders()
+   });
+   if(!r.ok){let msg='Не удалось открыть файл: '+r.status;try{const j=await r.json();msg=j.message||j.error||msg}catch{};throw new Error(msg)}
+   const buf=await r.arrayBuffer();
+   const blobUrl=URL.createObjectURL(new Blob([buf],{type:mime}));
+   win.location.href=blobUrl;
+   setTimeout(()=>URL.revokeObjectURL(blobUrl),120000);
+   return;
   }
- }catch(e){try{w.close()}catch{};alert(e.message||'Ошибка открытия файла')}
+
+  // Word: браузер сам DOC/DOCX не рендерит, поэтому передаём приватную
+  // временную ссылку в Word Online.
+  if(ext==='doc' || ext==='docx'){
+   const url=await makeLibrarySignedUrl(path);
+   win.location.href='https://view.officeapps.live.com/op/view.aspx?src='+encodeURIComponent(url);
+   return;
+  }
+
+  // Остальные форматы тоже стараемся открыть как blob.
+  const r=await fetch(CFG.url+'/storage/v1/object/authenticated/library/'+path.split('/').map(encodeURIComponent).join('/'),{
+   headers:await storageHeaders()
+  });
+  if(!r.ok)throw new Error('Не удалось открыть файл: '+r.status);
+  const type=(r.headers.get('content-type')||'application/octet-stream').split(';')[0];
+  const blobUrl=URL.createObjectURL(new Blob([await r.arrayBuffer()],{type}));
+  win.location.href=blobUrl;
+  setTimeout(()=>URL.revokeObjectURL(blobUrl),120000);
+ }catch(e){try{win.close()}catch{};alert(e.message||'Ошибка открытия файла')}
 }
 async function deleteLibraryFile(path){
  if(!confirm('Удалить файл из библиотеки?'))return;
@@ -212,7 +245,7 @@ function libraryView(){
   const path=AU.uid+'/'+x.name;
   const size=x.metadata?.size||0;
   const mime=x.metadata?.mimetype||x.metadata?.contentType||'';
-  return `<div class="r"><span><b>${esc(x.name)}</b><small>${libIcon(mime)} · ${libSize(size)}</small></span><button class="b2" data-a=libOpen data-path="${esc(path)}" data-name="${esc(x.name)}">Открыть</button><button class="x" data-a=libDelete data-path="${esc(path)}">✕</button></div>`
+  return `<div class="r"><span><b>${esc(x.name)}</b><small>${libIcon(mime)} · ${libSize(size)}</small></span><button type="button" class="b2" data-a=libOpen data-path="${esc(path)}" data-name="${esc(x.name)}">Открыть</button><button type="button" class="x" data-a=libDelete data-path="${esc(path)}">✕</button></div>`
  }).join('');
  return `<h1>Библиотека</h1><div class="g p"><input id="libraryInput" class="lib-file-input" type="file" hidden multiple onchange="handleLibraryInput(this)"><div class="row"><div style="flex:1"><b>Мои материалы</b><p class="mut">Файлы хранятся в Supabase и доступны после входа на любом устройстве. Word открывается через Word Online, PDF и HTML — прямо в новой вкладке.</p></div><label class="lib-upload" for="libraryInput">＋ Загрузить</label></div>${libBusy?'<p class="mut" style="margin-top:10px">Загрузка…</p>':''}${libErr?`<p class="neg" style="margin-top:10px">${esc(libErr)}</p>`:''}</div>${rows?`<div class="g">${rows}</div>`:'<div class="g p mut">Библиотека пока пустая. Нажми «Загрузить» и выбери файл.</div>'}`;
 }
