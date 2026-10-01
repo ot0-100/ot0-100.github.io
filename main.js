@@ -159,6 +159,21 @@ async function uploadLibraryFile(file){
   await loadLibrary();
  }catch(e){libBusy=false;libErr=e.message||'Ошибка загрузки';render();alert(libErr)}
 }
+
+// Надёжный обработчик выбора файла: не зависит от делегирования change-события на document.
+// Список File сохраняем до rerender(), потому что после начала загрузки input заменяется.
+function handleLibraryInput(input){
+ const files=Array.from(input?.files||[]);
+ input.value='';
+ if(!files.length)return;
+ console.log('[library] выбран файл:',files.map(f=>f.name));
+ (async()=>{
+  for(const file of files) await uploadLibraryFile(file);
+ })().catch(e=>{
+  console.error('[library] ошибка обработчика:',e);
+  libBusy=false;libErr=e.message||'Ошибка загрузки';render();
+ });
+}
 async function downloadLibraryFile(path,name){
  try{
   const r=await fetch(CFG.url+'/storage/v1/object/authenticated/library/'+path.split('/').map(encodeURIComponent).join('/'),{headers:await storageHeaders()});
@@ -179,7 +194,7 @@ const libIcon=m=>m&&m.startsWith('image/')?'▧':m==='application/pdf'?'PDF':m&&
 function libraryView(){
  if(!AU)return `<h1>Библиотека</h1><div class="g p mut">Войди в аккаунт, чтобы хранить материалы в облаке.</div>`;
  const rows=libFiles.map(x=>{const path=AU.uid+'/'+x.name,size=x.metadata?.size||0,mime=x.metadata?.mimetype||x.metadata?.contentType||'';return `<div class="r"><span><b>${esc(x.name)}</b><small>${libIcon(mime)} · ${libSize(size)}</small></span><button class="b2" data-a=libDownload data-path="${esc(path)}" data-name="${esc(x.name)}">Скачать</button><button class="x" data-a=libDelete data-path="${esc(path)}">✕</button></div>`}).join('');
- return `<h1>Библиотека</h1><div class="g p"><input id="libraryInput" class="lib-file-input" type="file" multiple><div class="row"><div style="flex:1"><b>Мои материалы</b><p class="mut">Файлы хранятся в Supabase и доступны после входа на любом устройстве.</p></div><label class="lib-upload" for="libraryInput">＋ Загрузить</label></div>${libBusy?'<p class="mut" style="margin-top:10px">Загрузка…</p>':''}${libErr?`<p class="neg" style="margin-top:10px">${esc(libErr)}</p>`:''}</div>${rows?`<div class="g">${rows}</div>`:'<div class="g p mut">Библиотека пока пустая. Нажми «Загрузить» и выбери файл.</div>'}`;
+ return `<h1>Библиотека</h1><div class="g p"><input id="libraryInput" class="lib-file-input" type="file" hidden multiple onchange="handleLibraryInput(this)"><div class="row"><div style="flex:1"><b>Мои материалы</b><p class="mut">Файлы хранятся в Supabase и доступны после входа на любом устройстве.</p></div><label class="lib-upload" for="libraryInput">＋ Загрузить</label></div>${libBusy?'<p class="mut" style="margin-top:10px">Загрузка…</p>':''}${libErr?`<p class="neg" style="margin-top:10px">${esc(libErr)}</p>`:''}</div>${rows?`<div class="g">${rows}</div>`:'<div class="g p mut">Библиотека пока пустая. Нажми «Загрузить» и выбери файл.</div>'}`;
 }
 
 // ---------- экраны ----------
@@ -466,7 +481,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b
  else if(a=='addled'){if(!(+v('la')>0)||!v('ld'))return;S.led.push({d:v('ld'),t:v('lt'),c:v('lc')||'Без категории',a:+v('la')})}
  else if(a=='delled')S.led.splice(i,1);
  save();render(a=='tab')});
-document.addEventListener('change',e=>{const t=e.target;if(t.id==='libraryInput'){const f=t.files?.[0];if(f)uploadLibraryFile(f);t.value='';return}const c=t.dataset.c;if(!c||c=='note')return;
+document.addEventListener('change',e=>{const t=e.target;const c=t.dataset.c;if(!c||c=='note')return;
  if(c=='tgl'){const s=t.dataset.d,id=t.dataset.k;if(S.skipped[s]&&S.skipped[s][id])return;S.done[s]=S.done[s]||{};S.done[s][id]=t.checked}
  else if(c=='stage')S.co[+t.dataset.i].s=t.value;
  else if(c=='debt')S.debts[+t.dataset.i].b=+t.value||0;

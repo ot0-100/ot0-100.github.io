@@ -61,8 +61,6 @@ h1{font-size:32px;letter-spacing:-.02em;margin:6px 0 18px;line-height:1.15}h3{fo
 input,select,textarea{font:inherit;color:var(--ink);background:var(--el2);border:0;border-radius:10px;padding:9px 11px;min-width:0;width:100%}
 textarea{min-height:200px;resize:vertical;margin-top:8px}
 button.b,button.b2{flex:none;border:0;border-radius:10px;padding:9px 16px;font-weight:600;font-size:14px;font-family:inherit;cursor:pointer;background:var(--acc);color:var(--on,#fff)}
-.lib-upload{display:inline-flex;align-items:center;justify-content:center;flex:none;border:0;border-radius:10px;padding:9px 16px;font-weight:600;font-size:14px;font-family:inherit;cursor:pointer;background:var(--acc);color:var(--on,#fff);transition:transform .25s cubic-bezier(.3,1.5,.5,1),opacity .2s,background .2s}.lib-upload:active{transform:scale(.95)}
-.lib-file-input{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;opacity:0}
 button.b2{background:var(--el2);color:var(--acc)}button:disabled{opacity:.4;cursor:default}
 .currency{display:inline-flex;gap:3px;padding:3px;background:var(--el2);border-radius:10px;flex:none}.currency button{border:0;background:transparent;color:var(--mut);border-radius:8px;padding:6px 12px;font:600 13px/1 inherit;cursor:pointer}.currency button.on{background:var(--el);color:var(--ink);box-shadow:0 1px 5px #0002}
 button.x{background:none;border:0;color:var(--mut);cursor:pointer;font-size:16px;flex:none}
@@ -75,7 +73,10 @@ table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;p
 .cd small{display:block;color:var(--mut);font-size:10px}.cd.td b{color:var(--acc)}.cd.sel{background:var(--acc)}.cd.sel small,.cd.sel b{color:var(--on,#fff)}
 .cd u{position:absolute;top:5px;right:7px;width:6px;height:6px;border-radius:50%;background:var(--ok)}
 .ent{display:block;width:100%;text-align:left;border:0;color:var(--ink);font-family:inherit;font-size:15px;cursor:pointer}.ent p{color:var(--mut)}
-.task-move,.task-skip{margin-left:6px;flex:none;border:0;background:transparent;cursor:pointer;font-size:18px;line-height:1;color:var(--mut);padding:3px 5px}.task-move:hover{color:var(--acc)}.task-skip{color:#ef4444}.task-skip:hover{color:#dc2626}.r.skipped{opacity:.9}.r.skipped span b{text-decoration:line-through}.r.skipped .neg{color:#ef4444}</style></head><body>
+.task-move,.task-skip{margin-left:6px;flex:none;border:0;background:transparent;cursor:pointer;font-size:18px;line-height:1;color:var(--mut);padding:3px 5px}.task-move:hover{color:var(--acc)}.task-skip{color:#ef4444}.task-skip:hover{color:#dc2626}.r.skipped{opacity:.9}.r.skipped span b{text-decoration:line-through}.r.skipped .neg{color:#ef4444}
+.lib-upload{display:inline-flex;align-items:center;justify-content:center;flex:none;border:0;border-radius:10px;padding:9px 16px;font-weight:600;font-size:14px;font-family:inherit;cursor:pointer;background:var(--acc);color:var(--on,#fff);transition:transform .25s cubic-bezier(.3,1.5,.5,1),opacity .2s,background .2s}.lib-upload:active{transform:scale(.95)}
+.lib-file-input{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;opacity:0}
+</style></head><body>
 <nav id="nav"></nav><main id="app"></main>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="config.js"></script>
@@ -240,6 +241,21 @@ async function uploadLibraryFile(file){
   await loadLibrary();
  }catch(e){libBusy=false;libErr=e.message||'Ошибка загрузки';render();alert(libErr)}
 }
+
+// Надёжный обработчик выбора файла: не зависит от делегирования change-события на document.
+// Список File сохраняем до rerender(), потому что после начала загрузки input заменяется.
+function handleLibraryInput(input){
+ const files=Array.from(input?.files||[]);
+ input.value='';
+ if(!files.length)return;
+ console.log('[library] выбран файл:',files.map(f=>f.name));
+ (async()=>{
+  for(const file of files) await uploadLibraryFile(file);
+ })().catch(e=>{
+  console.error('[library] ошибка обработчика:',e);
+  libBusy=false;libErr=e.message||'Ошибка загрузки';render();
+ });
+}
 async function downloadLibraryFile(path,name){
  try{
   const r=await fetch(CFG.url+'/storage/v1/object/authenticated/library/'+path.split('/').map(encodeURIComponent).join('/'),{headers:await storageHeaders()});
@@ -260,7 +276,7 @@ const libIcon=m=>m&&m.startsWith('image/')?'▧':m==='application/pdf'?'PDF':m&&
 function libraryView(){
  if(!AU)return `<h1>Библиотека</h1><div class="g p mut">Войди в аккаунт, чтобы хранить материалы в облаке.</div>`;
  const rows=libFiles.map(x=>{const path=AU.uid+'/'+x.name,size=x.metadata?.size||0,mime=x.metadata?.mimetype||x.metadata?.contentType||'';return `<div class="r"><span><b>${esc(x.name)}</b><small>${libIcon(mime)} · ${libSize(size)}</small></span><button class="b2" data-a=libDownload data-path="${esc(path)}" data-name="${esc(x.name)}">Скачать</button><button class="x" data-a=libDelete data-path="${esc(path)}">✕</button></div>`}).join('');
- return `<h1>Библиотека</h1><div class="g p"><input id="libraryInput" class="lib-file-input" type="file" multiple><div class="row"><div style="flex:1"><b>Мои материалы</b><p class="mut">Файлы хранятся в Supabase и доступны после входа на любом устройстве.</p></div><label class="lib-upload" for="libraryInput">＋ Загрузить</label></div>${libBusy?'<p class="mut" style="margin-top:10px">Загрузка…</p>':''}${libErr?`<p class="neg" style="margin-top:10px">${esc(libErr)}</p>`:''}</div>${rows?`<div class="g">${rows}</div>`:'<div class="g p mut">Библиотека пока пустая. Нажми «Загрузить» и выбери файл.</div>'}`;
+ return `<h1>Библиотека</h1><div class="g p"><input id="libraryInput" class="lib-file-input" type="file" hidden multiple onchange="handleLibraryInput(this)"><div class="row"><div style="flex:1"><b>Мои материалы</b><p class="mut">Файлы хранятся в Supabase и доступны после входа на любом устройстве.</p></div><label class="lib-upload" for="libraryInput">＋ Загрузить</label></div>${libBusy?'<p class="mut" style="margin-top:10px">Загрузка…</p>':''}${libErr?`<p class="neg" style="margin-top:10px">${esc(libErr)}</p>`:''}</div>${rows?`<div class="g">${rows}</div>`:'<div class="g p mut">Библиотека пока пустая. Нажми «Загрузить» и выбери файл.</div>'}`;
 }
 
 // ---------- экраны ----------
@@ -547,7 +563,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b
  else if(a=='addled'){if(!(+v('la')>0)||!v('ld'))return;S.led.push({d:v('ld'),t:v('lt'),c:v('lc')||'Без категории',a:+v('la')})}
  else if(a=='delled')S.led.splice(i,1);
  save();render(a=='tab')});
-document.addEventListener('change',e=>{const t=e.target;if(t.id==='libraryInput'){const f=t.files?.[0];if(f)uploadLibraryFile(f);t.value='';return}const c=t.dataset.c;if(!c||c=='note')return;
+document.addEventListener('change',e=>{const t=e.target;const c=t.dataset.c;if(!c||c=='note')return;
  if(c=='tgl'){const s=t.dataset.d,id=t.dataset.k;if(S.skipped[s]&&S.skipped[s][id])return;S.done[s]=S.done[s]||{};S.done[s][id]=t.checked}
  else if(c=='stage')S.co[+t.dataset.i].s=t.value;
  else if(c=='debt')S.debts[+t.dataset.i].b=+t.value||0;
